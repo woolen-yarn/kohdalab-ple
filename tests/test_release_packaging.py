@@ -1,6 +1,9 @@
 import hashlib
 import importlib.util
 import os
+import stat
+import shutil
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -45,6 +48,24 @@ class ReleasePackagingTests(unittest.TestCase):
             names = [item.relative_to(root).as_posix() for item in files]
 
             self.assertEqual(names, ["Cargo.toml", "bridge/ple_bridge.py", "servers/README.md"])
+
+    def test_zip_preserves_regular_file_and_executable_mode_after_extraction(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            executable = root / "fixture"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+            archive = root / "fixture.zip"
+            release.write_zip(archive, [(executable, "Example.app/Contents/MacOS/fixture")])
+            with zipfile.ZipFile(archive) as contents:
+                item = contents.getinfo("Example.app/Contents/MacOS/fixture")
+                self.assertEqual(item.create_system, 3)
+                self.assertEqual(stat.S_IFMT(item.external_attr >> 16), stat.S_IFREG)
+                self.assertEqual(stat.S_IMODE(item.external_attr >> 16), stat.S_IMODE(executable.stat().st_mode))
+            if os.name == "posix" and shutil.which("ditto"):
+                destination = root / "extracted"
+                subprocess.run(["ditto", "-x", "-k", str(archive), str(destination)], check=True, capture_output=True)
+                self.assertEqual(stat.S_IMODE((destination / "Example.app/Contents/MacOS/fixture").stat().st_mode), 0o755)
 
     def test_source_manifest_requires_reproducibility_and_policy_material(self):
         manifest = set(release.SOURCE_PATHS)

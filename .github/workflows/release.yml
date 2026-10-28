@@ -100,6 +100,14 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/build_release.py --platform macos-arm64 --output release-dist --tag "${{ github.ref_type == 'tag' && github.ref_name || '' }}"
+      - name: Validate extracted macOS application
+        run: |
+          version=$(python3 -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])")
+          ditto -x -k "release-dist/KohdaLab-PLE-v${version}-macos-arm64.zip" build/release-check
+          app="build/release-check/KohdaLab-PLE-v${version}-macos-arm64/KohdaLab PLE.app"
+          test -x "$app/Contents/MacOS/kohdalab-ple"
+          codesign --verify --deep --strict "$app"
+          "$app/Contents/MacOS/kohdalab-ple" --check-config --config examples/ple-settings.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
         with:
           name: release-macos-arm64

@@ -114,8 +114,11 @@ def write_zip(destination: Path, files: Iterable[tuple[Path, str]]) -> None:
     with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for source, member in sorted(files, key=lambda entry: entry[1]):
             info = zipfile.ZipInfo(member, date_time=timestamp)
+            info.create_system = 3
             info.compress_type = zipfile.ZIP_DEFLATED
-            info.external_attr = (stat.S_IMODE(source.stat().st_mode) & 0xFFFF) << 16
+            # ditto/Finder require the regular-file type as well as permission
+            # bits; omitting S_IFREG silently extracts macOS executables as 644.
+            info.external_attr = (stat.S_IFREG | stat.S_IMODE(source.stat().st_mode)) << 16
             archive.writestr(info, source.read_bytes())
 
 

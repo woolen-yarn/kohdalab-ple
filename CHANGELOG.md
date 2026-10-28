@@ -5,6 +5,7 @@
 - Align repository landing page, documentation categories, issue/PR templates and release entry points with KohdaLab TRKR. / TRKRとREADME・文書分類・Issue/PR・リリース入口を統一。
 - Add official SDK download links and the pending CONEX CC server integration directory. / SDK入手先と後日提供されるサーバーの受け入れ先を追加。
 - Fix a Windows-only unused test import exposed by GitHub CI. / GitHub CIで判明したWindows限定の未使用importを修正。
+- Preserve executable permissions when extracting macOS release ZIPs and verify the extracted app. / Mac版ZIPの展開時の実行権限を保持し、展開後のアプリを検証。
 
 ## 0.2.1 — 2026-10-29
 
