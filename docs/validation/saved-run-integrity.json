@@ -1,0 +1,9 @@
+{
+  "errors": [],
+  "hardware_spe_required": false,
+  "ok": true,
+  "run": "/private/tmp/kohdalab-ple-build/recovery-final-gui/runs/api_validation_1793230466436046000-46075",
+  "tolerance": 1e-08,
+  "verified_acquisitions": 6,
+  "warnings": []
+}

@@ -1,0 +1,27 @@
+{
+  "api_version": 1,
+  "mode": "demo",
+  "completed_rows": 6,
+  "bins_per_spectrum": 641,
+  "checks": [
+    "invalid_cli_rejected_before_gui",
+    "explicit_invalid_profile_rejected",
+    "read_only_observer",
+    "exclusive_lease",
+    "staged_connect",
+    "connected_spectrometer_apply_readback",
+    "power_wavelength_tracking_before_exposure",
+    "manual_0_25mm",
+    "out_of_range_rejected",
+    "idempotent_start",
+    "idempotent_background_confirmation",
+    "idempotent_analysis_confirmation",
+    "retained_first_raw",
+    "raw_bg_csv_energy_consistency",
+    "no_fake_spe",
+    "real_heartbeat_expiry_stop",
+    "revoked_owner_rejected",
+    "disconnect_and_release"
+  ],
+  "hardware_tested": false
+}

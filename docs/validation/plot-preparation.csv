@@ -1,0 +1,4 @@
+bins,curves,frames,old_prepare_ms,cached_prepare_ms,reduced_vertices_per_curve
+4096,8,120,2.830,0.062,4096
+65536,8,60,20.795,1.007,8192
+1000000,8,10,84.151,20.371,8192

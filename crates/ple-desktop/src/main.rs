@@ -1,0 +1,651 @@
+#![forbid(unsafe_code)]
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod api;
+mod api_ui;
+mod backend;
+mod engine;
+mod file_dialog;
+mod live_monitor;
+mod precision;
+mod presentation;
+mod remote_gui;
+mod remote_stage;
+mod ui;
+mod visuals;
+use eframe::egui::{self, RichText};
+
+use engine::{Command, Controller, Event};
+use ple_core::{
+    Acquisition, AnalysisConfig, BackgroundMode, Config, ExcitationMethod, HC_EV_NM, Mode,
+    PeakAnchor, PowerWavelengthMode, Sample, Spectrum, StageProtocol, recording,
+};
+use std::{
+    collections::VecDeque,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+#[derive(Default)]
+struct Launch {
+    auto_demo: bool,
+    review_demo: bool,
+    screenshot: Option<PathBuf>,
+    config: Option<PathBuf>,
+    energy: bool,
+    normalize: bool,
+    gui_api: bool,
+    check_config: bool,
+    api_dir: Option<PathBuf>,
+    api_server: Option<remote_gui::Server>,
+    loaded_config: Option<Config>,
+}
+struct HeatmapCache {
+    key: (usize, usize, bool),
+    rows: Vec<ple_core::display::HeatRow>,
+    low: f64,
+    high: f64,
+    signal_magnitude: f64,
+    raster: Option<presentation::HeatmapRaster>,
+}
+struct PleApp {
+    controller: Controller,
+    api: Option<api_ui::Runtime>,
+    api_cleanup: bool,
+    api_cleanup_error: Option<String>,
+    plot_cache: Option<presentation::PlotDataCache>,
+    config: Config,
+    connected: [bool; 3],
+    busy: bool,
+    manual_moving: bool,
+    spectrometer_configuring: bool,
+    power_sensor_wavelength: Option<f64>,
+    manual_target_mm: f64,
+    state: String,
+    samples: Vec<Arc<Sample>>,
+    background: Option<Spectrum>,
+    preview: Option<Arc<Acquisition>>,
+    analysis_draft: AnalysisConfig,
+    analysis_confirm_pending: bool,
+    spectrometer_settings: serde_json::Value,
+    logs: VecDeque<String>,
+    stage_history: live_monitor::History,
+    power_history: live_monitor::History,
+    stage_value: Option<f64>,
+    power_value: Option<f64>,
+    telemetry_epoch: f64,
+
+    energy: bool,
+    normalize: bool,
+    selected: Option<usize>,
+    awaiting: u8,
+    run_dir: String,
+    config_path: String,
+    load_path: String,
+    message: Option<String>,
+    started: Option<Instant>,
+    auto_demo: bool,
+    review_demo: bool,
+    auto_started: bool,
+    screenshot: Option<PathBuf>,
+    screenshot_requested: bool,
+    closing: bool,
+    heatmap_cache: Option<HeatmapCache>,
+    geometry: precision::Geometry,
+    left_collapsed: bool,
+    right_collapsed: bool,
+    right_was_maximized: bool,
+    device_expanded: [bool; 3],
+    pending_connections: [bool; 3],
+    advanced: Option<ui::Advanced>,
+    dialog: Option<ui::PendingDialog>,
+    plot_epoch: u64,
+    finished_elapsed: Option<f64>,
+    run_count: usize,
+    first_saved: Option<Instant>,
+    last_saved: Option<Instant>,
+}
+impl PleApp {
+    fn new(cc: &eframe::CreationContext<'_>, launch: Launch) -> Self {
+        Self::with_context(&cc.egui_ctx, launch)
+    }
+    fn with_context(ctx: &egui::Context, mut launch: Launch) -> Self {
+        ctx.set_visuals(egui::Visuals::dark());
+        precision::configure(ctx);
+        let mut config = Config::default();
+        if std::env::current_dir()
+            .ok()
+            .is_some_and(|p| p == std::path::Path::new("/"))
+            && let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        {
+            config.output_dir = std::path::PathBuf::from(home)
+                .join("Documents/KohdaLab/PLE")
+                .to_string_lossy()
+                .into();
+        }
+        let mut message = None;
+        if let Some(c) = launch.loaded_config.take() {
+            config = c;
+        } else if let Some(p) = &launch.config {
+            match std::fs::read_to_string(p)
+                .map_err(|e| e.to_string())
+                .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| e.to_string()))
+            {
+                Ok(c) => config = c,
+                Err(e) => message = Some(e),
+            }
+        }
+        if launch.auto_demo {
+            config.mode = Mode::Demo;
+            config.output_dir = "output/demo".into();
+            config.scan.settle_s = 0.08;
+        }
+        let config_path = if let Some(path) = &launch.config {
+            path.to_string_lossy().into_owned()
+        } else if std::path::Path::new("examples").is_dir() {
+            "examples/ple-settings.json".into()
+        } else {
+            std::path::Path::new(&config.output_dir)
+                .join("ple-settings.json")
+                .to_string_lossy()
+                .into_owned()
+        };
+        let analysis_draft = config.initial_analysis();
+        let controller = Controller::spawn();
+        let mut app = Self {
+            controller,
+            api: launch.api_server.map(api_ui::Runtime::new),
+            api_cleanup: false,
+            api_cleanup_error: None,
+            plot_cache: None,
+            config,
+            connected: [false; 3],
+            busy: false,
+            manual_moving: false,
+            spectrometer_configuring: false,
+            power_sensor_wavelength: None,
+            manual_target_mm: 18.,
+            state: "Idle".into(),
+            samples: Vec::new(),
+            background: None,
+            preview: None,
+            analysis_draft,
+            analysis_confirm_pending: false,
+            spectrometer_settings: serde_json::Value::Null,
+            logs: VecDeque::new(),
+            stage_history: Default::default(),
+            power_history: Default::default(),
+            stage_value: None,
+            power_value: None,
+            telemetry_epoch: recording::unix_s(),
+
+            energy: launch.energy,
+            normalize: launch.normalize,
+            selected: None,
+            awaiting: 0,
+            run_dir: String::new(),
+            config_path,
+            load_path: String::new(),
+            message,
+            started: None,
+            auto_demo: launch.auto_demo,
+            review_demo: launch.review_demo,
+            auto_started: false,
+            screenshot: launch.screenshot,
+            screenshot_requested: false,
+            closing: false,
+            heatmap_cache: None,
+            geometry: Default::default(),
+            left_collapsed: false,
+            right_collapsed: false,
+            right_was_maximized: false,
+            device_expanded: [false; 3],
+            pending_connections: [false; 3],
+            advanced: None,
+            dialog: None,
+            plot_epoch: 0,
+            finished_elapsed: None,
+            run_count: 0,
+            first_saved: None,
+            last_saved: None,
+        };
+        if app.auto_demo {
+            app.pending_connections = [true; 3];
+            for device in ["spectrometer", "stage", "power"] {
+                let _ = app
+                    .controller
+                    .commands
+                    .send(Command::Connect(device, app.config.clone()));
+            }
+        }
+        app
+    }
+    fn log(&mut self, text: impl Into<String>) {
+        let elapsed = recording::unix_s() - self.telemetry_epoch;
+        self.logs
+            .push_back(format!("{:07.1}s  {}", elapsed, text.into()));
+        while self.logs.len() > 500 {
+            self.logs.pop_front();
+        }
+    }
+    fn send(&mut self, command: Command) {
+        if let Err(e) = self.controller.commands.send(command) {
+            self.message = Some(e.to_string());
+        }
+    }
+    fn start(&mut self) {
+        self.start_for(None);
+    }
+    fn recovery_reason(&self) -> Option<String> {
+        let (pending, error) = self.controller.stop_status();
+        if pending {
+            Some("Waiting for Stop and device readback".into())
+        } else {
+            error.or_else(|| self.api_cleanup_error.clone())
+        }
+    }
+    fn start_for(&mut self, external_id: Option<String>) {
+        if let Some(reason) = self.recovery_reason() {
+            self.message = Some(format!("Confirm device recovery before starting: {reason}"));
+            return;
+        }
+        match self.config.plan() {
+            Ok(_) => {
+                self.busy = true;
+                self.awaiting = 0;
+                self.samples.clear();
+                self.background = None;
+                self.preview = None;
+                self.analysis_draft = self.config.initial_analysis();
+                self.analysis_confirm_pending = false;
+                self.selected = None;
+                self.run_dir.clear();
+                self.started = Some(Instant::now());
+                self.finished_elapsed = None;
+                self.run_count = self.config.plan().map(|p| p.acquisition_count).unwrap_or(0);
+                self.plot_epoch = self.plot_epoch.wrapping_add(1);
+                self.heatmap_cache = None;
+                self.first_saved = None;
+                self.last_saved = None;
+                self.message = None;
+                let submitted = match external_id {
+                    Some(id) => self.controller.begin_external(self.config.clone(), id),
+                    None => self.controller.begin(self.config.clone()),
+                };
+                if let Err(e) = submitted {
+                    self.message = Some(e);
+                    self.busy = false;
+                }
+            }
+            Err(e) => self.message = Some(e),
+        }
+    }
+    fn confirm_analysis(&mut self) {
+        let Some(a) = &self.preview else {
+            return;
+        };
+        if let Err(e) = self.analysis_draft.validate(&a.spectrum.wavelength_nm) {
+            self.message = Some(e);
+            return;
+        }
+        let mut c = self.config.clone();
+        c.analysis = Some(self.analysis_draft.clone());
+        self.analysis_confirm_pending = true;
+        self.message = None;
+        self.send(Command::SelectAnalysis(Box::new(c)));
+    }
+    fn events(&mut self) {
+        while let Ok(event) = self.controller.events.try_recv() {
+            let note = api_ui::Note::from_event(&event);
+            match event {
+                Event::Log(s) => self.log(s),
+                Event::Device { device, connected } => {
+                    let i = match device {
+                        "spectrometer" => 0,
+                        "stage" => 1,
+                        _ => 2,
+                    };
+                    let previous = self.connected[i];
+                    self.connected[i] = connected;
+                    if i == 0 && !connected {
+                        self.spectrometer_settings = serde_json::Value::Null;
+                    }
+                    self.pending_connections[i] = false;
+                    if i == 1 {
+                        self.stage_history.connection_changed(previous, connected);
+                        if !connected {
+                            self.stage_value = None;
+                        }
+                    }
+                    if i == 2 {
+                        self.power_history.connection_changed(previous, connected);
+                        if !connected {
+                            self.power_value = None;
+                            self.power_sensor_wavelength = None;
+                        }
+                    }
+                }
+                Event::Telemetry {
+                    device,
+                    value,
+                    timestamp,
+                } => {
+                    let index = if device == "stage" { 1 } else { 2 };
+                    if !self.connected[index] {
+                        continue;
+                    }
+                    let origin = if self.config.mode == Mode::Demo {
+                        live_monitor::Origin::Demo
+                    } else {
+                        live_monitor::Origin::Hardware
+                    };
+                    if device == "stage" {
+                        self.stage_value = Some(value);
+                        self.stage_history.push(value, origin);
+                    } else {
+                        self.power_value = Some(value);
+                        self.power_history.push(value, origin);
+                    }
+                    let _ = timestamp;
+                }
+
+                Event::State(s) => {
+                    self.log(&s);
+                    self.state = s;
+                }
+                Event::ManualMoveFinished(result) => {
+                    self.manual_moving = false;
+                    match result {
+                        Ok(p) => {
+                            self.state = format!("CONEX ready at {p:.6} mm");
+                            self.log(self.state.clone());
+                        }
+                        Err(e) => {
+                            self.state = "Manual move stopped / failed".into();
+                            self.log(&e);
+                            self.message = Some(e);
+                        }
+                    }
+                }
+                Event::AwaitBackground => {
+                    self.awaiting = 1;
+                    if self.auto_demo {
+                        self.send(Command::Continue);
+                        self.awaiting = 0;
+                    }
+                }
+                Event::AwaitSignal => {
+                    self.awaiting = 2;
+                    if self.auto_demo {
+                        self.send(Command::Continue);
+                        self.awaiting = 0;
+                    }
+                }
+                Event::Preview(a) => {
+                    self.preview = Some(a);
+                    self.awaiting = 3;
+                    self.analysis_confirm_pending = false;
+                    self.plot_epoch = self.plot_epoch.wrapping_add(1);
+                    if self.auto_demo && !self.review_demo {
+                        self.confirm_analysis();
+                    }
+                }
+                Event::AnalysisRejected(e) => {
+                    self.analysis_confirm_pending = false;
+                    self.message = Some(e);
+                }
+                Event::AnalysisAccepted(c) => {
+                    self.message = None;
+                    self.config = *c;
+                    self.analysis_draft = self.config.initial_analysis();
+                    self.awaiting = 0;
+                    self.analysis_confirm_pending = false;
+                }
+                Event::SpectrometerSettings(v) => self.spectrometer_settings = v,
+                Event::PowerWavelength(nm) => self.power_sensor_wavelength = Some(nm),
+                Event::SpectrometerConfigured(result) => {
+                    self.spectrometer_configuring = false;
+                    match result {
+                        Ok(v) => {
+                            self.spectrometer_settings = v;
+                            self.message = None;
+                            self.api_cleanup_error = None;
+                            self.log("LightField settings applied and read back");
+                        }
+                        Err(e) => {
+                            self.log(&e);
+                            self.api_cleanup_error =
+                                Some(format!("Spectrometer configuration was not confirmed: {e}"));
+                            self.message = Some(e);
+                        }
+                    }
+                }
+                Event::Cleanup { confirmed, error } => {
+                    self.api_cleanup_error = if confirmed {
+                        None
+                    } else {
+                        error.or_else(|| Some("Device cleanup unconfirmed".into()))
+                    };
+                }
+                Event::Background(bg) => {
+                    self.log(format!("BG saved: {} bins", bg.counts.len()));
+                    self.background = Some(bg);
+                }
+                Event::Sample(s) => {
+                    let now = Instant::now();
+                    if self.first_saved.is_none() {
+                        self.first_saved = Some(now);
+                    }
+                    self.last_saved = Some(now);
+                    self.preview = None;
+                    self.samples.push(s);
+                }
+                Event::RunCreated(path) => {
+                    self.load_path = path.clone();
+                    self.run_dir = path;
+                }
+                Event::Finished { state, error } => {
+                    if state.contains("unconfirmed")
+                        || error.as_ref().is_some_and(|e| {
+                            e.contains("shutter closed state could not be confirmed")
+                        })
+                    {
+                        self.api_cleanup_error =
+                            Some(error.clone().unwrap_or_else(|| state.clone()));
+                    }
+                    self.busy = false;
+                    self.finished_elapsed = self.started.map(|t| t.elapsed().as_secs_f64());
+                    self.awaiting = 0;
+                    self.state = state.clone();
+                    self.log(state);
+                    if let Some(e) = error {
+                        self.log(&e);
+                        self.message = Some(e);
+                    }
+                }
+            }
+            self.api_observe(note);
+        }
+    }
+}
+fn save_profile(path: &std::path::Path, config: &Config) -> Result<(), String> {
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    recording::atomic_json(path, config)
+}
+impl eframe::App for PleApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.events();
+        self.poll_api(ctx);
+        if ctx.input(|i| i.viewport().close_requested())
+            && (self.busy
+                || self.manual_moving
+                || self.spectrometer_configuring
+                || self.pending_connections.iter().any(|x| *x))
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            self.closing = true;
+            self.controller.stop();
+            self.state = "Closing: waiting for current device operation".into();
+        }
+        if self.closing
+            && !self.busy
+            && !self.manual_moving
+            && !self.spectrometer_configuring
+            && !self.pending_connections.iter().any(|x| *x)
+            && !self.controller.stop_status().0
+        {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        if self.auto_demo && !self.auto_started && self.connected.iter().all(|x| *x) {
+            self.auto_started = true;
+            self.start();
+        }
+        self.poll_dialog();
+        self.draw(ctx);
+        if self.screenshot.is_some()
+            && self.auto_started
+            && ((!self.busy && !self.samples.is_empty())
+                || (self.review_demo && self.awaiting == 3))
+            && !self.screenshot_requested
+        {
+            self.screenshot_requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+        let capture = ctx.input(|i| {
+            i.events.iter().find_map(|e| {
+                if let egui::Event::Screenshot { image, .. } = e {
+                    Some(image.clone())
+                } else {
+                    None
+                }
+            })
+        });
+        if let Some(image) = capture
+            && let Some(path) = &self.screenshot
+        {
+            let bytes: Vec<u8> = image.pixels.iter().flat_map(|c| c.to_array()).collect();
+            let result = image::save_buffer(
+                path,
+                &bytes,
+                image.width() as u32,
+                image.height() as u32,
+                image::ColorType::Rgba8,
+            );
+            if let Err(e) = result {
+                eprintln!("Screenshot: {e}");
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        ctx.request_repaint_after(Duration::from_millis(
+            if self.connected.iter().any(|x| *x) || self.busy {
+                16
+            } else {
+                75
+            },
+        ));
+    }
+}
+fn required_arg(args: &mut impl Iterator<Item = String>, option: &str) -> eframe::Result<String> {
+    args.next().ok_or_else(|| {
+        eframe::Error::AppCreation(Box::new(std::io::Error::other(format!(
+            "{option} needs a value"
+        ))))
+    })
+}
+fn main() -> eframe::Result {
+    let mut launch = Launch::default();
+    let mut args = std::env::args().skip(1);
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--auto-demo" => launch.auto_demo = true,
+            "--review-demo" => {
+                launch.auto_demo = true;
+                launch.review_demo = true;
+            }
+            "--check-config" => launch.check_config = true,
+            "--gui-api" => launch.gui_api = true,
+            "--api-dir" => {
+                launch.api_dir = Some(PathBuf::from(required_arg(&mut args, "--api-dir")?))
+            }
+            "--energy" => launch.energy = true,
+            "--power-normalize" => launch.normalize = true,
+            "--screenshot" => {
+                launch.screenshot = Some(PathBuf::from(required_arg(&mut args, "--screenshot")?))
+            }
+            "--config" => launch.config = Some(PathBuf::from(required_arg(&mut args, "--config")?)),
+            "--version" => {
+                println!("kohdalab-ple {}", env!("CARGO_PKG_VERSION"));
+                return Ok(());
+            }
+            "--help" => {
+                println!(
+                    "kohdalab-ple [--config profile.json] [--check-config] [--version] [--gui-api] [--api-dir directory] [--auto-demo] [--energy] [--power-normalize] [--screenshot image.png]\nHardware connections and motion always require explicit actions. --auto-demo is device-free."
+                );
+                return Ok(());
+            }
+            _ => {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    format!("Unknown argument: {a}; use --help"),
+                ))));
+            }
+        }
+    }
+    if let Some(path) = &launch.config {
+        let checked = std::fs::read_to_string(path)
+            .map_err(|e| e.to_string())
+            .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| e.to_string()))
+            .and_then(|c| {
+                c.plan()?;
+                Ok(c)
+            });
+        match checked {
+            Ok(c) => launch.loaded_config = Some(c),
+            Err(e) => {
+                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                    format!("Invalid explicit profile {}: {e}", path.display()),
+                ))));
+            }
+        }
+    }
+    if launch.check_config {
+        let c = launch.loaded_config.as_ref().ok_or_else(|| {
+            eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                "--check-config requires --config FILE",
+            )))
+        })?;
+        println!(
+            "{}",
+            serde_json::json!({"config_valid":true,"application_version":env!("CARGO_PKG_VERSION"),"mode":c.mode,"plan":c.plan().map_err(|e|eframe::Error::AppCreation(Box::new(std::io::Error::other(e))))?})
+        );
+        return Ok(());
+    }
+    if launch.gui_api {
+        let directory = match launch.api_dir.take() {
+            Some(p) => p,
+            None => std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map(|p| PathBuf::from(p).join(".kohdalab/run"))
+                .ok_or_else(|| {
+                    eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                        "Cannot locate API discovery directory",
+                    )))
+                })?,
+        };
+        let server = remote_gui::Server::start(directory)
+            .map_err(|e| eframe::Error::AppCreation(Box::new(std::io::Error::other(e))))?;
+        eprintln!("PLE GUI API endpoint: {}", server.descriptor.display());
+        launch.api_server = Some(server);
+    }
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1566., 900.])
+            .with_min_inner_size([1566., 700.]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "KohdaLab PLE",
+        options,
+        Box::new(move |cc| Ok(Box::new(PleApp::new(cc, launch)))),
+    )
+}

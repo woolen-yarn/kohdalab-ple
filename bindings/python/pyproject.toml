@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kohdalab-ple"
+version = "0.2.1"
+description = "Python client for the Rust KohdaLab PLE GUI API"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["kohdalab_ple*"]

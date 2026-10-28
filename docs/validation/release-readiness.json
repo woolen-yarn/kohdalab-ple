@@ -1,0 +1,75 @@
+{
+  "version": "0.2.1",
+  "rust_tests": 75,
+  "python_tests": 69,
+  "rust_clippy": "passed, warnings denied",
+  "rust_fmt": "passed",
+  "gui_api_demo": "passed, 6 spectra x 641 bins; see gui-api.json",
+  "gui_visuals": [
+    "nm",
+    "eV and counts/W",
+    "first PL review"
+  ],
+  "windows_cross_build": {
+    "target": "x86_64-pc-windows-gnu",
+    "passed": true,
+    "sha256": "0d741b6b628996121decd91ab250ceea9224b02618781c1db11fc3d8ece3e3f0",
+    "imports": [
+      "ADVAPI32.dll",
+      "GDI32.dll",
+      "KERNEL32.dll",
+      "OPENGL32.dll",
+      "SHELL32.dll",
+      "USER32.dll",
+      "api-ms-win-core-path-l1-1-0.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "api-ms-win-crt-environment-l1-1-0.dll",
+      "api-ms-win-crt-heap-l1-1-0.dll",
+      "api-ms-win-crt-locale-l1-1-0.dll",
+      "api-ms-win-crt-math-l1-1-0.dll",
+      "api-ms-win-crt-private-l1-1-0.dll",
+      "api-ms-win-crt-runtime-l1-1-0.dll",
+      "api-ms-win-crt-stdio-l1-1-0.dll",
+      "api-ms-win-crt-string-l1-1-0.dll",
+      "bcryptprimitives.dll",
+      "dwmapi.dll",
+      "gdi32.dll",
+      "imm32.dll",
+      "kernel32.dll",
+      "ntdll.dll",
+      "ole32.dll",
+      "shell32.dll",
+      "shlwapi.dll",
+      "user32.dll",
+      "userenv.dll",
+      "uxtheme.dll",
+      "ws2_32.dll"
+    ]
+  },
+  "macos_release": {
+    "target": "aarch64-apple-darwin",
+    "passed": true,
+    "unbundled_executable_sha256": "0a438e883d61c531457e2819d7139c7e843bc09e1d2cca90622981dbca0a904a",
+    "note": "Hash refers to target/release executable before app bundle code signing; archive hashes are in dist/checksums.json."
+  },
+  "not_tested": [
+    "Windows runtime and Windows-specific PowerShell/file operations",
+    "LightField, CONEX, Thorlabs, MFF physical devices",
+    "physical calibration"
+  ],
+  "independent_fix_review": "P1 findings fixed; no new issue in re-reviewed recovery scope",
+  "powershell_runtime": {
+    "platform": "macOS arm64",
+    "version": "7.6.9",
+    "tests_passed": 5,
+    "vendor_sdk_or_windows_native_calls": false,
+    "packaging_build_tools": "stubbed; file operations and staging executed"
+  },
+  "recovery_fault_tests": [
+    "failed and timed-out acquire -> Stop -> ensure_idle -> next command",
+    "unconfirmed idle blocks next operation",
+    "failed connect retains Stop owner",
+    "reconnect cleanup failure latched; retained owner disconnected via API",
+    "GUI Start and Move blocked until recovery"
+  ]
+}

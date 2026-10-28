@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "mode": "hardware",
+  "sample": "enter_sample",
+  "output_dir": "C:\\MeasurementData\\PLE",
+  "spectrometer": {
+    "python": "python",
+    "bridge_script": "bridge/ple_bridge.py",
+    "experiment": "enter_LightField_experiment",
+    "visible": true,
+    "exposure_ms": 1000.0,
+    "frames_combined": 1,
+    "center_nm": 780.0,
+    "grating": "",
+    "timeout_s": 120.0
+  },
+  "stage": {
+    "host": "scallop.local",
+    "port": 9000,
+    "com_port": "COM4",
+    "allow_legacy_initialize": false,
+    "min_mm": 0.0,
+    "max_mm": 25.0,
+    "tolerance_mm": 0.001,
+    "timeout_s": 90.0,
+    "protocol": "remote_json",
+    "token_env": "PLE_CONEX_TOKEN"
+  },
+  "power": {
+    "resource": "enter_VISA_resource",
+    "driver_path": "C:\\Measurement\\kohdalab-pl-main",
+    "wavelength_nm": 720.0,
+    "correction_factor": 1.0,
+    "average_s": 0.2,
+    "wavelength_mode": "fixed",
+    "wavelength_tolerance_nm": 1.0
+  },
+  "scan": {
+    "start_mm": 18.0,
+    "stop_mm": 18.2,
+    "step_mm": 0.02,
+    "repeats": 2,
+    "settle_s": 0.5,
+    "peak_min_nm": 765.0,
+    "peak_max_nm": 795.0
+  },
+  "excitation_method": "spectrum_peak",
+  "excitation_min_nm": 680.0,
+  "excitation_max_nm": 740.0,
+  "excitation_peaks": [
+    {
+      "position_mm": 18.0,
+      "wavelength_nm": 700.0
+    },
+    {
+      "position_mm": 19.2,
+      "wavelength_nm": 760.0
+    }
+  ],
+  "excitation_min_snr": 5.0,
+  "background": {
+    "mode": "manual",
+    "shutter_serial": "",
+    "closed_state": 1,
+    "open_state": 0,
+    "timeout_s": 10.0
+  },
+  "analysis": null
+}
