@@ -255,6 +255,7 @@ fn linux_dialog(kind: Kind, initial: &str) -> Result<Option<PathBuf>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::path::PathBuf;
 
     #[cfg(unix)]

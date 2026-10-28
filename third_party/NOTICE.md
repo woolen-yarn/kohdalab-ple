@@ -30,3 +30,7 @@ For crates whose published archives omit texts, `rust-upstream/provenance.json`
 records the fixed upstream source and SHA-256, or the upstream SPDX assignment
 and standard SPDX text. Original metadata is retained for the latter.
 This inventory does not include vendor SDK DLLs or their redistribution rights.
+
+The documentation link checker (`scripts/check_docs.py`) is adapted from the
+MIT-licensed KohdaLab TRKR repository at commit `066f8968`. The upstream MIT
+notice remains in `kohdalab-trkr/LICENSE`.

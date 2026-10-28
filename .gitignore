@@ -6,3 +6,10 @@ __pycache__/
 .DS_Store
 
 /dist/
+
+/build/
+/runs/
+/.venv/
+.env
+*.local.json
+*.dll
