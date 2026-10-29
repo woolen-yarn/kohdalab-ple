@@ -63,15 +63,14 @@ impl Server {
         // publishing a complete discovery record.
         let mut temporary =
             tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
-        serde_json::to_writer(
-            &mut temporary,
-            &json!({
-                "revision": 1, "api_version": API_VERSION,
-                "app": "kohdalab-ple", "host": "127.0.0.1", "port": port,
-                "token": token, "instance_id": instance_id, "pid": std::process::id(),
-            }),
-        )
-        .map_err(|e| e.to_string())?;
+        let legacy = json!({
+            "revision": 1, "api_version": API_VERSION,
+            "app": "kohdalab-ple", "host": "127.0.0.1", "port": port,
+            "token": token, "instance_id": instance_id, "pid": std::process::id(),
+        });
+        let descriptor_value =
+            kohdalab_control_protocol::descriptor(legacy, "kohdalab-ple", API_VERSION);
+        serde_json::to_writer(&mut temporary, &descriptor_value).map_err(|e| e.to_string())?;
         temporary
             .as_file_mut()
             .sync_all()
@@ -193,6 +192,7 @@ fn serve(
     stream
         .set_write_timeout(Some(TIMEOUT))
         .map_err(|e| e.to_string())?;
+    let mut common_original = None;
     let response = read_line(&mut stream)
         .and_then(|line| {
             if line.len() > MAX_REQUEST || !line.ends_with('\n') {
@@ -201,9 +201,22 @@ fn serve(
             serde_json::from_str::<Value>(&line).map_err(|_| "Invalid JSON request".to_owned())
         })
         .and_then(|body| {
-            if body.get("token").and_then(Value::as_str) != Some(token) {
-                return Ok(json!({"ok":false,"error":"GUI API authentication failed","error_code":"authentication"}));
+            if kohdalab_control_protocol::is_common(&body) {
+                common_original = Some(body.clone());
             }
+            if body.get("token").and_then(Value::as_str) != Some(token) {
+                let native = json!({"ok":false,"error":"GUI API authentication failed","error_code":"authentication"});
+                return Ok(if kohdalab_control_protocol::is_common(&body) {
+                    kohdalab_control_protocol::response(&body, native)
+                } else {
+                    native
+                });
+            }
+            let original = body.clone();
+            let body = match kohdalab_control_protocol::prepare(&body) {
+                Ok(body) => body,
+                Err(error) => return Ok(error),
+            };
             let (reply, receive) = mpsc::sync_channel(1);
             send.try_send(Request {
                 body,
@@ -211,11 +224,16 @@ fn serve(
                 reply,
             })
             .map_err(|_| "GUI request queue unavailable".to_owned())?;
-            receive
+            let native = receive
                 .recv_timeout(TIMEOUT)
-                .map_err(|_| "GUI request timed out; check status before retrying".to_owned())
+                .map_err(|_| "GUI request timed out; check status before retrying".to_owned())?;
+            Ok(kohdalab_control_protocol::response(&original, native))
         })
-        .unwrap_or_else(|error| json!({"ok":false,"error":error,"error_code":"transport"}));
+        .unwrap_or_else(|error| {
+            let native = json!({"ok":false,"error":error,"error_code":"transport"});
+            common_original.as_ref().map_or(native.clone(), |original|
+                kohdalab_control_protocol::response(original, native))
+        });
     serde_json::to_writer(&mut stream, &response).map_err(|e| e.to_string())?;
     stream.write_all(b"\n").map_err(|e| e.to_string())
 }

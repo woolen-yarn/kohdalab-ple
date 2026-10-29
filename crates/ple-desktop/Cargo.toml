@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 ple-core.workspace = true
+kohdalab-control-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }

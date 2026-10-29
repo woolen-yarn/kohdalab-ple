@@ -1,0 +1,10 @@
+[package]
+name = "kohdalab-control-protocol"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT"
+description = "Shared, device-free KohdaLab GUI control boundary contract"
+
+[dependencies]
+serde_json = "1"

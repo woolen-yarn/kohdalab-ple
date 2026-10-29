@@ -50,20 +50,30 @@ class GuiPLE:
 
     @staticmethod
     def _run_directory() -> Path:
-        return Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".") / ".kohdalab" / "run"
+        return Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".") / ".kohdalab" / "control"
+
+    @staticmethod
+    def _discovery_directories() -> list[Path]:
+        root = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".") / ".kohdalab"
+        return [root / "control", root / "run"]
 
     @classmethod
     def _load_endpoint(cls, endpoint: str | Path | None) -> dict[str, Any]:
         if endpoint is not None:
             return cls._read_endpoint(Path(endpoint))
         candidates = []
-        for path in sorted(cls._run_directory().glob("ple-gui-*.json")):
+        seen: set[tuple[str, str]] = set()
+        paths = [path for directory in cls._discovery_directories() if directory.is_dir() for path in sorted(directory.glob("ple-gui-*.json"))]
+        for path in paths:
             try:
                 candidate = cls._read_endpoint(path)
                 # A stale descriptor is ignored only after a read-only probe;
                 # never delete another process's file from a client library.
                 cls._probe(candidate)
-                candidates.append(candidate)
+                key = (str(candidate.get("app", "kohdalab-ple")), str(candidate.get("instance_id", path.name)))
+                if key not in seen:
+                    seen.add(key)
+                    candidates.append(candidate)
             except GuiPLEError:
                 continue
         if not candidates:

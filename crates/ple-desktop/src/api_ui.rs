@@ -7,6 +7,7 @@ pub(super) struct Runtime {
     pub server: crate::remote_gui::Server,
     pub session: Session,
     active: Option<Active>,
+    pending_common_release: bool,
 }
 struct Active {
     id: String,
@@ -39,6 +40,7 @@ impl Runtime {
             server,
             session: Session::default(),
             active: None,
+            pending_common_release: false,
         }
     }
 }
@@ -80,17 +82,24 @@ impl PleApp {
             "last_error":self.message})
     }
     pub(super) fn poll_api(&mut self, ctx: &egui::Context) {
-        if self.api_cleanup
+        let (_stop_pending, stop_error) = self.controller.stop_status();
+        let cleanup_error = stop_error.is_some() || self.api_cleanup_error.is_some();
+        let cleanup_verified = self.api_cleanup
             && !self.busy
             && !self.manual_moving
             && !self.pending_connections.iter().any(|p| *p)
             && !self.controller.stop_status().0
-        {
+            && !cleanup_error;
+        if cleanup_verified {
             self.api_cleanup = false;
         }
         let Some(mut runtime) = self.api.take() else {
             return;
         };
+        if cleanup_verified && runtime.pending_common_release {
+            runtime.session.lease = None;
+            runtime.pending_common_release = false;
+        }
         if runtime.session.expired() {
             runtime.session.revoke();
             self.api_stop(&mut runtime);
@@ -165,12 +174,21 @@ impl PleApp {
             .or_else(|| body.get("action"))
             .and_then(Value::as_str)
             .ok_or_else(|| Error::new("validation", "method or action is required"))?;
+        let common = body.get("_control_method").is_some();
+        let method = match method {
+            "control_describe" => "capabilities",
+            "control_status" => "status",
+            "control_result" => "result",
+            other => other,
+        };
         match method {
             "capabilities" => {
                 return Ok(
-                    json!({"application":"kohdalab-ple","application_version":env!("CARGO_PKG_VERSION"),"api_version":1,"transport_revision":1,
+                    json!({"application":"kohdalab-ple","application_version":env!("CARGO_PKG_VERSION"),"api_version":1,"control_protocol":1,"transport_revision":1,
+                "methods":["control.describe","control.status","control.devices","control.config","control.plan","control.output","control.spectrum","control.background","control.preview","control.shutter","control.acquire","control.heartbeat","control.release","control.result","control.configure","control.set_plan","control.set_background","control.set_output","control.apply_spectrometer","control.connect","control.disconnect","control.start","control.move","control.confirm_background","control.confirm_signal","control.select_analysis","control.stop"],
                 "actions":["capabilities","status","devices","config","plan","output","spectrum","background","preview","shutter","acquire","heartbeat","release","configure","set_plan","set_background","set_output","apply_spectrometer","connect","disconnect","start","move","confirm_background","confirm_signal","select_analysis","result","stop"],
                 "history_limit":api::HISTORY_LIMIT,"command_history_limit":api::HISTORY_LIMIT,"lease_timeout_s":10,"headless":false,"arbitrary_device_commands":false,
+                "safety":{"lease_timeout_seconds":10,"heartbeat_seconds":2,"on_disconnect":"stop","on_release":"stop","stop_requires_lease":true,"stop_policy_defaults":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true}},
                 "safety_policy":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true,"automatic_shutter":self.config.background.mode==BackgroundMode::Automatic,"shutter_backend":self.config.background.backend,"shutter_feedback":"controller_state_not_optical_sensor","manual_beam_block_required":self.config.background.mode==BackgroundMode::Manual},
                 "stage_travel_mm":[0,25],"confirmation_required":true}),
                 );
@@ -179,6 +197,27 @@ impl PleApp {
                 let mut s = self.api_snapshot();
                 s["control_owned"] = json!(r.session.lease.is_some());
                 s["active_job"] = json!(r.active.as_ref().map(|a| &a.id));
+                if common {
+                    let cleanup_error = s["cleanup_error"].is_string();
+                    let cleanup_pending = s["cleanup_pending"].as_bool().unwrap_or(false);
+                    s["ownership"] = json!({"owned": r.session.lease.is_some(), "active_job": r.active.as_ref().map(|a| &a.id)});
+                    s["cleanup"] = json!(if cleanup_error {
+                        "unknown"
+                    } else if cleanup_pending {
+                        "pending"
+                    } else {
+                        "not_required"
+                    });
+                    s["phase"] = json!(if cleanup_error {
+                        "error"
+                    } else if cleanup_pending {
+                        "cleanup_pending"
+                    } else if s["busy"].as_bool().unwrap_or(false) {
+                        "running"
+                    } else {
+                        "ready"
+                    });
+                }
                 return Ok(s);
             }
             "devices" => return Ok(self.api_snapshot()["devices"].clone()),
@@ -200,7 +239,8 @@ impl PleApp {
             }
             "result" => {
                 let id = body
-                    .get("id")
+                    .get("job_id")
+                    .or_else(|| body.get("id"))
                     .or_else(|| body.get("request_id"))
                     .and_then(Value::as_str)
                     .ok_or_else(|| Error::new("validation", "id is required"))?;
@@ -208,7 +248,31 @@ impl PleApp {
                     r.session
                         .update(id, "running", self.api_snapshot(), None, None);
                 }
-                return r.session.receipt(id);
+                let receipt = r.session.receipt(id)?;
+                return if common {
+                    let status = receipt["status"].as_str().unwrap_or("error").to_owned();
+                    let kind = receipt["kind"].as_str().unwrap_or("run").to_owned();
+                    let linked = receipt["run_job"].as_str().map(str::to_owned);
+                    Ok(kohdalab_control_protocol::receipt(
+                        id,
+                        &kind,
+                        &status,
+                        if self.api_snapshot()["cleanup_error"].is_string() {
+                            "unknown"
+                        } else if self.api_snapshot()["cleanup_pending"]
+                            .as_bool()
+                            .unwrap_or(false)
+                        {
+                            "pending"
+                        } else {
+                            "not_required"
+                        },
+                        linked.as_deref(),
+                        receipt,
+                    ))
+                } else {
+                    Ok(receipt)
+                };
             }
             "spectrum" | "preview" => {
                 return if let Some(a) = &self.preview {
@@ -223,17 +287,40 @@ impl PleApp {
             }
             "background" => return Ok(json!(self.background)),
             "stop" => {
+                let job_id = r.active.as_ref().map(|a| a.id.clone());
                 self.api_stop(r);
-                return Ok(json!({"stop_requested":true,"confirmed":false}));
+                return Ok(if common {
+                    json!({"requested":true,"job_id":job_id,"cleanup":"pending","native":{"stop_requested":true,"confirmed":false}})
+                } else {
+                    json!({"stop_requested":true,"confirmed":false})
+                });
             }
             "acquire" => {
-                return r
-                    .session
-                    .claim(string(body, "client_id")?, self.operation_busy());
+                let result = if common {
+                    r.session.claim_common(
+                        string(body, "client_id")?,
+                        body.get("lease").and_then(Value::as_str),
+                        self.operation_busy(),
+                    )?
+                } else {
+                    r.session
+                        .claim(string(body, "client_id")?, self.operation_busy())?
+                };
+                return if common {
+                    Ok(
+                        json!({"client_id":body["client_id"],"lease":result["lease"],"heartbeat_seconds":2,"timeout_seconds":10,"native":result}),
+                    )
+                } else {
+                    Ok(result)
+                };
             }
             _ => {}
         }
-        r.session.require(body)?;
+        if common {
+            r.session.require_common(body)?;
+        } else {
+            r.session.require(body)?;
+        }
         let tracked = matches!(
             method,
             "configure"
@@ -267,10 +354,21 @@ impl PleApp {
             "release" => {
                 if self.operation_busy() || self.controller.stop_status().0 {
                     self.api_stop(r);
-                    return Ok(json!({"released":false,"cleanup_pending":true}));
+                    if common {
+                        r.pending_common_release = true;
+                    }
+                    return Ok(if common {
+                        json!({"released":false,"cleanup":"pending","native":{"cleanup_pending":true}})
+                    } else {
+                        json!({"released":false,"cleanup_pending":true})
+                    });
                 }
                 r.session.lease = None;
-                Ok(json!({"released":true,"cleanup_pending":false}))
+                Ok(if common {
+                    json!({"released":true,"cleanup":"verified","native":{"cleanup_pending":false}})
+                } else {
+                    json!({"released":true,"cleanup_pending":false})
+                })
             }
             "configure" => {
                 self.api_idle()?;
@@ -405,7 +503,35 @@ impl PleApp {
                 Ok(json!({"accepted":true}))
             }
             "connect" | "disconnect" | "start" | "move" | "apply_spectrometer" => {
-                self.api_job(r, method, body)
+                let native = self.api_job(r, method, body)?;
+                if common {
+                    let id = native["id"]
+                        .as_str()
+                        .or_else(|| native["run_job"].as_str())
+                        .ok_or_else(|| Error::new("validation", "Job receipt has no id"))?;
+                    let id = id.to_owned();
+                    let status = native["status"].as_str().unwrap_or("running").to_owned();
+                    let kind = native["kind"].as_str().unwrap_or(method).to_owned();
+                    let linked = native["run_job"].as_str().map(str::to_owned);
+                    return Ok(kohdalab_control_protocol::receipt(
+                        &id,
+                        &kind,
+                        &status,
+                        if self.api_snapshot()["cleanup_error"].is_string() {
+                            "unknown"
+                        } else if self.api_snapshot()["cleanup_pending"]
+                            .as_bool()
+                            .unwrap_or(false)
+                        {
+                            "pending"
+                        } else {
+                            "not_required"
+                        },
+                        linked.as_deref(),
+                        native,
+                    ));
+                }
+                Ok(native)
             }
             _ => Err(Error::new(
                 "unsupported",
@@ -726,6 +852,154 @@ mod tests {
         let error = call(&mut app, json!({"action":"configure", "lease":lease, "request_id":crate::remote_gui::new_id().unwrap(), "config":profile})).unwrap_err();
         assert_eq!(error.code, "validation");
         assert_eq!(app.config.sample, "saved_ple_profile");
+    }
+    #[test]
+    fn common_reacquire_requires_lease_and_matching_client() {
+        let (mut app, _ctx, _dir, lease) = setup();
+        let client = app
+            .api
+            .as_ref()
+            .unwrap()
+            .session
+            .lease
+            .as_ref()
+            .unwrap()
+            .client
+            .clone();
+        let missing = call(
+            &mut app,
+            json!({"action":"acquire","_control_method":"acquire","client_id":client}),
+        )
+        .unwrap_err();
+        assert_eq!(missing.code, "invalid_lease");
+        let wrong = call(
+            &mut app,
+            json!({"action":"acquire","_control_method":"acquire","client_id":crate::remote_gui::new_id().unwrap(),"lease":lease}),
+        )
+        .unwrap_err();
+        assert_eq!(wrong.code, "ownership");
+    }
+    #[test]
+    fn common_status_uses_cleanup_pending_phase_and_non_verified_receipt() {
+        let (mut app, _ctx, _dir, lease) = setup();
+        let client = app
+            .api
+            .as_ref()
+            .unwrap()
+            .session
+            .lease
+            .as_ref()
+            .unwrap()
+            .client
+            .clone();
+        let status = call(
+            &mut app,
+            json!({"action":"status","_control_method":"status","client_id":client,"lease":lease}),
+        )
+        .unwrap();
+        assert_eq!(status["phase"], "ready");
+        assert_eq!(status["cleanup"], "not_required");
+        app.api_cleanup = true;
+        let status = call(
+            &mut app,
+            json!({"action":"status","_control_method":"status","client_id":client,"lease":lease}),
+        )
+        .unwrap();
+        assert_eq!(status["phase"], "cleanup_pending");
+        assert_eq!(status["cleanup"], "pending");
+    }
+    #[test]
+    fn common_describe_advertises_configuration_and_confirmation_actions() {
+        let (mut app, _ctx, _dir, _lease) = setup();
+        let description = call(
+            &mut app,
+            json!({"action":"control_describe","_control_method":"describe"}),
+        )
+        .unwrap();
+        for method in [
+            "control.configure",
+            "control.set_plan",
+            "control.confirm_background",
+            "control.confirm_signal",
+            "control.select_analysis",
+        ] {
+            assert!(
+                description["methods"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == method)
+            );
+        }
+    }
+    #[test]
+    fn common_release_during_active_work_releases_after_cleanup() {
+        let (mut app, ctx, _dir, lease) = setup();
+        let client = app
+            .api
+            .as_ref()
+            .unwrap()
+            .session
+            .lease
+            .as_ref()
+            .unwrap()
+            .client
+            .clone();
+        app.busy = true;
+        let pending = call(
+            &mut app,
+            json!({"action":"release","_control_method":"release","client_id":client,"lease":lease}),
+        )
+        .unwrap();
+        assert_eq!(pending["released"], false);
+        assert_eq!(pending["cleanup"], "pending");
+        assert!(app.api.as_ref().unwrap().session.lease.is_some());
+        app.busy = false;
+        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        assert!(app.api.as_ref().unwrap().session.lease.is_none());
+        assert!(!app.api_cleanup);
+    }
+    #[test]
+    fn common_release_cleanup_error_keeps_ownership_and_reports_unknown() {
+        let (mut app, ctx, _dir, lease) = setup();
+        let client = app
+            .api
+            .as_ref()
+            .unwrap()
+            .session
+            .lease
+            .as_ref()
+            .unwrap()
+            .client
+            .clone();
+        app.busy = true;
+        let pending = call(
+            &mut app,
+            json!({"action":"release","_control_method":"release","client_id":client,"lease":lease}),
+        )
+        .unwrap();
+        assert_eq!(pending["cleanup"], "pending");
+        app.busy = false;
+        app.api_cleanup_error = Some("cleanup acknowledgement failed".into());
+        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        assert!(app.api.as_ref().unwrap().session.lease.is_some());
+        assert!(app.api_cleanup);
+        let status = call(
+            &mut app,
+            json!({"action":"status","_control_method":"status","client_id":client,"lease":lease}),
+        )
+        .unwrap();
+        assert_eq!(status["phase"], "error");
+        assert_eq!(status["cleanup"], "unknown");
+    }
+    #[test]
+    fn native_cleanup_completion_does_not_revoke_native_lease() {
+        let (mut app, ctx, _dir, _lease) = setup();
+        assert!(app.api.as_ref().unwrap().session.lease.is_some());
+        app.api_cleanup = true;
+        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        assert!(!app.api_cleanup);
+        assert!(app.api.as_ref().unwrap().session.lease.is_some());
     }
     #[test]
     fn background_api_validates_idle_ownership_and_idempotency() {

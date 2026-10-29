@@ -42,6 +42,8 @@ jobs:
       - name: Verify Windows Setup lifecycle with a small payload
         if: runner.os == 'Windows'
         run: python scripts/verify_windows_installer.py --fixture
+      - name: Common GUI control SDK (device-free)
+        run: python -m unittest discover -s bindings/control -p "test_*.py" -v
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Lint Rust workspace

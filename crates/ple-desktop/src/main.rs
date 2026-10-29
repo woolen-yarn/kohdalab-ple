@@ -96,6 +96,7 @@ struct PleApp {
     heatmap_cache: Option<HeatmapCache>,
     geometry: precision::Geometry,
     left_collapsed: bool,
+    rails_initialized: bool,
     right_collapsed: bool,
     right_was_maximized: bool,
     device_expanded: [bool; 3],
@@ -190,6 +191,7 @@ impl PleApp {
             heatmap_cache: None,
             geometry: Default::default(),
             left_collapsed: false,
+            rails_initialized: false,
             right_collapsed: false,
             right_was_maximized: false,
             device_expanded: [false; 3],
@@ -688,7 +690,7 @@ fn main() -> eframe::Result {
         let directory = match launch.api_dir.take() {
             Some(p) => p,
             None => std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-                .map(|p| PathBuf::from(p).join(".kohdalab/run"))
+                .map(|p| PathBuf::from(p).join(kohdalab_control_protocol::DISCOVERY_DIRECTORY))
                 .ok_or_else(|| {
                     eframe::Error::AppCreation(Box::new(std::io::Error::other(
                         "Cannot locate API discovery directory",

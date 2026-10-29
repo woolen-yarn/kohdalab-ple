@@ -1,4 +1,5 @@
 import json
+import os
 import socket
 import sys
 import tempfile
@@ -88,6 +89,16 @@ class GuiPLETests(unittest.TestCase):
         move = self.server.requests[-1]
         self.assertEqual(move["lease"], "lease")
         self.assertEqual(move["request_id"], "00000000-0000-4000-8000-000000000000")
+
+    def test_discovery_searches_canonical_and_legacy_directories(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / ".kohdalab"
+            for directory, name in ((root / "control", "ple-gui-control.json"), (root / "run", "ple-gui-legacy.json")):
+                directory.mkdir(parents=True)
+                (directory / name).write_text(json.dumps({"app":"kohdalab-ple","api_version":1,"host":"127.0.0.1","port":self.server.port,"token":"secret","pid":1,"instance_id":"same"}))
+            with patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}, clear=False):
+                client = GuiPLE()
+                self.assertEqual(client.endpoint["app"], "kohdalab-ple")
 
     def test_installed_binary_is_found_without_path_changes(self):
         from kohdalab_ple import find_binary

@@ -352,6 +352,15 @@ pub struct Columns {
 impl Columns {
     pub const WIDTH: f32 = 850.;
     pub const RIGHT_WIDTH: f32 = 300.;
+    /// Collapse only side rails on a narrow first launch; central content stays
+    /// fixed and is never made wheel-scrollable.
+    pub fn initial_rails(viewport_width: f32) -> (bool, bool) {
+        if viewport_width < Self::minimum_width(false, false) {
+            (true, true)
+        } else {
+            (false, false)
+        }
+    }
     pub fn minimum_width(collapsed: bool, left_collapsed: bool) -> f32 {
         (if left_collapsed { 40. } else { 384. })
             + Self::WIDTH
@@ -537,6 +546,11 @@ mod tests {
         assert_eq!(left.center.width() - full.center.width(), 344.);
         assert_eq!(left.right, full.right);
         assert_eq!(Columns::minimum_width(false, false), 1566.);
+    }
+    #[test]
+    fn laptop_initial_layout_collapses_only_the_side_rails() {
+        assert_eq!(Columns::initial_rails(1200.), (true, true));
+        assert_eq!(Columns::initial_rails(1566.), (false, false));
     }
     #[test]
     fn theme_and_control_metrics_match_pinned_upstream() {
