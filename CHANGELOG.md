@@ -2,6 +2,8 @@
 
 ## Unreleased / 未リリース
 
+- Explicitly restore blocking reads in a Windows TCP test fixture without changing Stop assertions. / Windowsの模擬TCP接続の読み取り設定を明示し、Stopの検証条件を維持。
+
 - Derive macOS bundle versions from Cargo and stage fresh bundles transactionally. / Mac版の版番号をCargoから取得し、古いファイルを残さず安全に再作成。
 
 - Preserve upstream license bytes across Windows checkout and verify provenance before compiling. / Windowsで上流ライセンスの改行を変換せず保持し、ビルド前に照合。
