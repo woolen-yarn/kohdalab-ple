@@ -1,26 +1,25 @@
-# KohdaLab PLE 0.3.4 — Windows Setup and application directories
+# KohdaLab PLE 0.3.5 preview
 
-Install with `KohdaLab-PLE-0.3.4-Setup.exe`, using the same NSIS installer family as TRKR/IV. Setup installs PLE and the compatible shutter companion into `C:\Program Files\Kohdalab\KohdaLab PLE`, creates Start menu/desktop shortcuts and an uninstaller. It requires administrator approval. Settings and results stay under the current user’s `~/.kohdalab/ple`; updates stage the complete replacement and keep the previous folder as a sibling backup.
+## Changes / 変更内容
 
-Windows CI runs fresh install, repeat/update, locked-process refusal, payload hash checks, installed CLI/config/client discovery and uninstall with operator-data preservation. Portable ZIP remains available. Python and manufacturer SDKs are still separate.
+Add Control Protocol 1 and the shared Python SDK. Distinguish command ACKs from linked measurement jobs, retain exclusive ownership through unresolved cleanup, and report cleanup failures explicitly. Keep the original GUI measurement/confirmation workflow.
 
-Control the running PLE GUI with the standard-library Python/Jupyter `GuiClient` and acquire BG through kohdalab-shutter without opening a second Pico connection.
+## Compatibility and migration / 互換性と移行
 
-- Ordinary GUI startup publishes an authenticated local API. Existing `GuiPLE` remains supported; `GuiClient.launch`, executable discovery, `set_background` and `shutter_status` simplify automation. `--no-gui-api` disables the local endpoint.
-- Native Rust protocol-2 client owns a renewable exclusive lease of an already-connected kohdalab-shutter GUI. It waits for job completion and settled controller Open/Close before acquisition.
-- Stop/error requests Close; verified cleanup releases ownership. Uncertain mutations, lease loss and unresolved closure prevent the next measurement. Controller state is explicitly not optical-sensor confirmation.
-- Preserve manual BG, MFF support, raw SPE/CSV, mandatory BG subtraction, first-PL analysis review, four plots and SDK apparatus discovery. Demo never connects a physical shutter service.
+Native clients remain supported; native Stop retains its ownership. Only accepted common release retires its lease after cleanup confirmation. Existing optical cleanup barrier, BG/analysis confirmation, manufacturer SDK requirements and CSV/SPE storage remain. Config stays `~/.kohdalab/ple/config.json`.
 
-## Downloads
+## Downloads / ダウンロード
 
-Extract `KohdaLab-PLE-v0.3.4-windows-x64.zip` completely and read `START-HERE.md`. The ZIP includes the client, SDK adapters, configuration examples and verification scripts. Rust is not needed to run it. Windows instruments require separately installed 64-bit Python, LightField and matching manufacturer software/helper. A pinned, compatible kohdalab-shutter Windows GUI/CLI companion is included with corresponding source and license texts. Start `companions/kohdalab-shutter/Start-Shutter.cmd` on the same acquisition PC, then connect the physical Pico before automatic BG.
+Windows x64 Setup/portable ZIP, macOS Apple-silicon Demo/results ZIP, source and checksums. Physical LightField acquisition still requires Windows, 64-bit Python and matching manufacturer SDKs. Compatible Shutter companion and its source/licenses are included as before. Windows is unsigned; Mac is ad hoc signed, not notarized.
 
-macOS arm64 supports Demo/results. Windows binaries are unsigned; macOS uses ad hoc signing. Download the SHA-256 file with the packages. No physical camera, Pico, servo, optical closure or calibration qualification is claimed. See `VALIDATION.json` and the hardware checklist.
+[Release packages](https://github.com/woolen-yarn/kohdalab-ple/releases). Existing older releases remain available.
+
+## Validation and provenance / 検証と出所
+
+Local Rust workspace: 107 passed; strict clippy passed. Actual native Demo GUI completed six rows and 641 spectral bins with ownership, confirmation, idempotency, expiry and cleanup checks. Focused common tests cover failed cleanup, active release and native Stop compatibility.
+
+The common Python SDK has seven device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
 
 ## 日本語
 
-Setup.exeによるインストールに対応しました。アプリはProgram FilesのPLE専用フォルダー、設定は`~/.kohdalab/ple/config.json`、既定の測定結果は`~/.kohdalab/ple/results`です。shutter GUIも同梱し、スタートメニューから起動できます。更新・アンインストールでユーザーデータを削除しません。
-
-通常起動のGUIをPython/Jupyterから操作できるよう整え、kohdalab-shutterによる自動BGを追加しました。Pico接続はshutter GUIが所有し、PLEはRustからローカルAPIへ接続します。Close → 整定待ち → BG → Open → 整定待ち → 初回PLと進み、peak・積分区間を確認して残りを取得します。終了時は閉状態を確認して操作権を解放します。
-
-通信断や操作権喪失を遮光成功とみなしません。STATEはコントローラーの状態であり、実光路は現地で確認します。従来の手動BG・MFFと生データ保存は維持しています。
+共通GUI APIを追加し、受付と測定完了、停止確認の未完了・失敗を区別します。従来API、BG・解析確認、CSV/SPEを維持します。実機取得にはWindowsとメーカーSDK等が必要で、MacはDemo・結果確認用です。
