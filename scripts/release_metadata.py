@@ -7,7 +7,7 @@ from pathlib import Path
 import zipfile
 
 
-def write_metadata(directory: Path, version: str, commit: str, run_url: str) -> None:
+def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, require_shutter: bool = False) -> None:
     archives = [directory / f"KohdaLab-PLE-v{version}-{platform}.zip"
                 for platform in ("source", "windows-x64", "macos-arm64")]
     hashes = {}
@@ -21,6 +21,7 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str) -> 
             if contents.testzip() is not None:
                 raise ValueError(f"corrupt archive: {archive.name}")
         hashes[archive.name] = digest
+    companion = None
     with zipfile.ZipFile(archives[1]) as windows:
         names = windows.namelist()
         metadata_name = next(n for n in names if n.endswith("/windows-metadata.json"))
@@ -30,9 +31,27 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str) -> 
             raise ValueError("Windows binary hash differs from inspected binary")
         if metadata["external_vc_runtime_required"] is not False:
             raise ValueError("Unexpected external VC runtime requirement")
+        companion_names = [n for n in names if n.endswith("/companions/kohdalab-shutter/companion-origin.json")]
+        if require_shutter and len(companion_names) != 1:
+            raise ValueError("Required shutter companion is missing")
+        if companion_names:
+            companion_name = companion_names[0]
+            companion = json.loads(windows.read(companion_name).decode("utf-8-sig"))
+            if companion.get("commit") != "8d22245899c36206622341ed5957919508aac0a1" or companion.get("protocol") != 2:
+                raise ValueError("Shutter companion revision/protocol mismatch")
+            prefix = companion_name.rsplit("/", 1)[0] + "/"
+            for filename, key in (("kohdalab-shutter-gui.exe", "gui_sha256"), ("kohdalab-shutter.exe", "cli_sha256")):
+                if hashlib.sha256(windows.read(prefix + filename)).hexdigest() != companion[key]:
+                    raise ValueError("Shutter companion binary hash mismatch")
+                inspection_name = "shutter-gui-metadata.json" if key == "gui_sha256" else "shutter-cli-metadata.json"
+                inspection = json.loads(windows.read(prefix + inspection_name).decode("utf-8-sig"))
+                if inspection.get("executable_sha256") != companion[key] or inspection.get("external_vc_runtime_required") is not False:
+                    raise ValueError("Shutter binary inspection does not match companion")
+            for required in ("source.zip", "LICENSE", "Start-Shutter.cmd", "third_party/rust/NOTICE.json", "shutter-gui-imports.txt", "shutter-cli-imports.txt", "shutter-gui-metadata.json", "shutter-cli-metadata.json"):
+                windows.getinfo(prefix + required)
     origin = {"schema_version": 1, "version": version, "commit": commit,
               "workflow_url": run_url, "artifacts_sha256": hashes,
-              "windows_executable_sha256": metadata["executable_sha256"]}
+              "windows_executable_sha256": metadata["executable_sha256"], "shutter_companion": companion}
     validation = {"schema_version": 1, "version": version, "commit": commit,
                   "workflow_url": run_url, "software_checks": {
                       "rust_tests_fmt_clippy": "passed", "python_tests": "passed",
@@ -51,9 +70,10 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str) -> 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--require-shutter", action="store_true")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--run-url", required=True)
     args = parser.parse_args()
-    write_metadata(args.directory, args.version, args.commit, args.run_url)
+    write_metadata(args.directory, args.version, args.commit, args.run_url, require_shutter=args.require_shutter)

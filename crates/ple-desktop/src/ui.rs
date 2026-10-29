@@ -1090,6 +1090,17 @@ impl PleApp {
                     .finished_elapsed
                     .or_else(|| self.started.map(|t| t.elapsed().as_secs_f64()))),
             ),
+            (
+                "external_api",
+                if self.api_owned() {
+                    "Python / external owner"
+                } else if self.api.is_some() {
+                    "Ready (local PC)"
+                } else {
+                    "Disabled"
+                }
+                .into(),
+            ),
             ("run_dir", self.run_dir.clone()),
         ]
     }
@@ -1407,7 +1418,7 @@ impl PleApp {
   Advanced::Excitation=>{ui.label(format!("Laser: {}",self.config.apparatus.laser_model));label_text(ui,"Installed optics (record)",&mut self.config.apparatus.laser_optics);ui.horizontal(|ui|{ui.selectable_value(&mut self.config.excitation_method,ExcitationMethod::SpectrumPeak,"Spectrum peak");ui.selectable_value(&mut self.config.excitation_method,ExcitationMethod::Calibration,"Position calibration");});if self.config.excitation_method==ExcitationMethod::SpectrumPeak{label_number(ui,"Excitation search min (nm)",&mut self.config.excitation_min_nm,0.1);label_number(ui,"Excitation search max (nm)",&mut self.config.excitation_max_nm,0.1);label_number(ui,"Minimum peak SNR",&mut self.config.excitation_min_snr,0.5);ui.label("Separate from the PL analysis peak. Maximum-bin detection; median / MAD screening.");}
 if self.config.excitation_method==ExcitationMethod::Calibration||self.config.power.wavelength_mode==PowerWavelengthMode::PositionCalibration{let mut remove=None;egui::Grid::new("excitation_anchors").show(ui,|ui|{ui.label("CONEX (mm)");ui.label("Excitation (nm)");ui.end_row();for(i,a)in self.config.excitation_peaks.iter_mut().enumerate(){ui.add(egui::DragValue::new(&mut a.position_mm).speed(0.001));ui.add(egui::DragValue::new(&mut a.wavelength_nm).speed(0.1));if ui.button("Remove").clicked(){remove=Some(i);}ui.end_row();}});if let Some(i)=remove{self.config.excitation_peaks.remove(i);}
 if ui.button("Add anchor").clicked(){self.config.excitation_peaks.push(PeakAnchor{position_mm:self.config.scan.stop_mm,wavelength_nm:720.});}}label_number(ui,"Peak search ±nm",&mut self.analysis_draft.peak_half_width_nm,0.1);
-ui.add_enabled_ui(!locked,|ui|{ui.horizontal(|ui|{ui.selectable_value(&mut self.config.background.mode,BackgroundMode::Manual,"Manual BG");ui.selectable_value(&mut self.config.background.mode,BackgroundMode::Automatic,"Automatic shutter");});if self.config.background.mode==BackgroundMode::Automatic{label_text(ui,"MFF shutter serial",&mut self.config.background.shutter_serial);let mut closed=self.config.background.closed_state as f64;let mut open=self.config.background.open_state as f64;label_number(ui,"Beam blocked state",&mut closed,1.);label_number(ui,"Beam open state",&mut open,1.);self.config.background.closed_state=closed.round().clamp(0.,255.)as u8;self.config.background.open_state=open.round().clamp(0.,255.)as u8;label_number(ui,"Shutter timeout (s)",&mut self.config.background.timeout_s,1.);ui.label("Check the actual optical path: state numbers depend on the setup. Automatic mode closes after the run or stop.");}});
+ui.add_enabled_ui(!locked,|ui|{ui.horizontal(|ui|{ui.selectable_value(&mut self.config.background.mode,BackgroundMode::Manual,"Manual BG");ui.selectable_value(&mut self.config.background.mode,BackgroundMode::Automatic,"Automatic shutter");});if self.config.background.mode==BackgroundMode::Automatic{ui.horizontal(|ui|{ui.selectable_value(&mut self.config.background.backend,ShutterBackend::KohdalabShutter,"kohdalab-shutter");ui.selectable_value(&mut self.config.background.backend,ShutterBackend::Mff,"MFF direct");});if self.config.background.backend==ShutterBackend::KohdalabShutter{label_text(ui,"GUI endpoint (blank = auto)",&mut self.config.background.endpoint);let mut channel=self.config.background.channel as f64;label_number(ui,"Physical channel (CH0 = 0)",&mut channel,1.);self.config.background.channel=channel.round().clamp(0.,255.)as usize;ui.label("Start kohdalab-shutter on this PC, enable Local control API and connect the Pico first. PLE acquires exclusive control; display order does not change CH numbers.");}else{label_text(ui,"MFF shutter serial",&mut self.config.background.shutter_serial);let mut closed=self.config.background.closed_state as f64;let mut open=self.config.background.open_state as f64;label_number(ui,"Beam blocked state",&mut closed,1.);label_number(ui,"Beam open state",&mut open,1.);self.config.background.closed_state=closed.round().clamp(0.,255.)as u8;self.config.background.open_state=open.round().clamp(0.,255.)as u8;}label_number(ui,"Shutter timeout (s)",&mut self.config.background.timeout_s,1.);ui.label("BG waits for settled controller state. Optical blocking must be checked on the actual setup. Stop / end requests Close; lost communication can leave closure unconfirmed.");ui.monospace(serde_json::to_string_pretty(&self.current_shutter_state()).unwrap_or_default());}});
 }
  }});if let Err(e)=self.config.plan(){ui.colored_label(RED,e);}});
         if browse {

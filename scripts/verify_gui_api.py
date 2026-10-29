@@ -41,7 +41,7 @@ def main():
     invalid=output/"invalid.json";invalid.write_text('{"mode":"not_a_mode"}')
     rejected=subprocess.run([str(args.executable.resolve()),"--gui-api","--api-dir",str(endpoint_dir),"--config",str(invalid)],capture_output=True,timeout=10)
     assert rejected.returncode!=0 and not list(endpoint_dir.glob("ple-gui-*.json"))
-    log=(output/"gui.log").open("wb");command=[str(args.executable.resolve()),"--gui-api","--api-dir",str(endpoint_dir),"--config",str(profile_path)]
+    log=(output/"gui.log").open("wb");command=[str(args.executable.resolve()),"--api-dir",str(endpoint_dir),"--config",str(profile_path)]
     process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT);(output/"process.json").write_text(json.dumps({"pid":process.pid,"command":command,"log":str(output/"gui.log")}))
     client=None;observer=None;endpoint=None
     try:
@@ -78,6 +78,25 @@ def main():
             for r in rows:
                 v={k:float(x) for k,x in r.items()};assert math.isclose(v["corrected_counts"],v["raw_counts"]-v["background_counts"],abs_tol=1e-10);assert math.isclose(v["emission_eV"]*v["emission_nm"],1239.8419843320026,rel_tol=1e-12)
         assert not list(run.rglob("*.spe"));assert json.loads((run/"accepted_settings.json").read_text())["config"]["analysis"]==analysis
+        # Automatic BG uses the same GUI engine. Demo must never attach to the
+        # external shutter descriptor (even when an explicit nonexistent path is set).
+        automatic={"mode":"automatic","backend":"kohdalab_shutter","endpoint":"missing-demo-shutter.json","channel":0,"timeout_s":1.0}
+        bg_id=str(uuid.uuid4());bg_ack=client.set_background(automatic,request_id=bg_id)
+        assert client.set_background(automatic,request_id=bg_id)==bg_ack
+        auto=client.start();until(lambda:client.status()["awaiting"]=="analysis_selection")
+        assert client.preview()["kind"]=="preview"
+        client.select_analysis(analysis)
+        auto_receipt=client.wait(auto["id"],timeout=10)
+        auto_run=Path(auto_receipt["output"])
+        auto_events=[json.loads(line) for line in (auto_run/"events.jsonl").read_text().splitlines()]
+        for transition in ("shutter_closed","shutter_opened","shutter_end_close"):
+            matches=[e for e in auto_events if e["kind"]==transition]
+            assert len(matches)==1, (transition,matches)
+            assert matches[0]["data"]["controller_state_confirmed"]
+            assert matches[0]["data"]["physical_optical_sensor_confirmed"] is False
+        assert json.loads((auto_run/"metadata/shutter.json").read_text())["feedback"]=="simulated"
+        assert client.shutter_status()["settings"]["backend"]=="kohdalab_shutter"
+        client.set_background({"mode":"manual"})
         # Real lease loss: do not send Stop or heartbeat on behalf of this owner.
         stopped_job=client.start();until(lambda:client.status()["awaiting"]=="background_confirmation");expired_client_id=client.client_id;old_lease=client.lease;client._clear_lease()
         until(lambda:not observer.status()["control_owned"],timeout=13);until(lambda:not observer.status()["busy"],timeout=5)
@@ -86,7 +105,7 @@ def main():
         except GuiPLEError as error:assert error.code=="ownership_lost"
         else:raise AssertionError("Expired owner still has control")
         replacement=GuiPLE(endpoint);replacement.acquire();assert replacement.wait(replacement.disconnect()["id"],timeout=5)["status"]=="completed";replacement.close();client.close();observer.close()
-        evidence={"api_version":1,"mode":"demo","completed_rows":len(metadata),"bins_per_spectrum":641,"checks":["invalid_cli_rejected_before_gui","explicit_invalid_profile_rejected","read_only_observer","exclusive_lease","staged_connect","connected_spectrometer_apply_readback","power_wavelength_tracking_before_exposure","manual_0_25mm","out_of_range_rejected","idempotent_start","idempotent_background_confirmation","idempotent_analysis_confirmation","retained_first_raw","raw_bg_csv_energy_consistency","no_fake_spe","real_heartbeat_expiry_stop","revoked_owner_rejected","disconnect_and_release"],"hardware_tested":False}
+        evidence={"api_version":1,"mode":"demo","completed_rows":len(metadata),"bins_per_spectrum":641,"checks":["default_gui_api_enabled","automatic_bg_controller_metadata","background_config_idempotency","demo_never_opens_shutter_service","invalid_cli_rejected_before_gui","explicit_invalid_profile_rejected","read_only_observer","exclusive_lease","staged_connect","connected_spectrometer_apply_readback","power_wavelength_tracking_before_exposure","manual_0_25mm","out_of_range_rejected","idempotent_start","idempotent_background_confirmation","idempotent_analysis_confirmation","retained_first_raw","raw_bg_csv_energy_consistency","no_fake_spe","real_heartbeat_expiry_stop","revoked_owner_rejected","disconnect_and_release"],"hardware_tested":False}
         (output/"evidence.json").write_text(json.dumps(evidence,indent=2)+"\n");print(json.dumps(evidence,indent=2))
     finally:
         # This process was launched with an explicit Demo-only profile and all

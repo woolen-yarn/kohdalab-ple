@@ -4,7 +4,7 @@ GUIがLightField、CONEX、パワーメーターを所有します。Python/Jupy
 
 ## 起動と接続
 
-APIは既定で無効です。通常のGUIでの測定方法は変わりません。
+通常起動したGUIへ同じPCから接続できます。ローカルAPIは既定で有効で、`--no-gui-api`で無効にできます。token認証・排他的操作権を維持し、接続だけでは機器を動かしません。
 
 ```sh
 kohdalab-ple --gui-api --config experiment.json
@@ -14,7 +14,7 @@ python -m pip install ./bindings/python
 `127.0.0.1`の空きポートだけで待ち受け、`~/.kohdalab/run/ple-gui-<pid>-<instance>.json`へ発見用ファイルを作ります。`--api-dir DIRECTORY`で専用フォルダーを指定できます。Unixの発見ファイルは0600です。トークンはファイルにのみ記録し、通常ログに出しません。正常終了時に発見ファイルを除去します。クラッシュ後の古いファイルはクライアントが読取り専用の疎通確認で除外します。
 
 ```python
-from kohdalab_ple import GuiPLE
+from kohdalab_ple import GuiPLE, GuiClient, find_binary
 
 observer = GuiPLE()  # 状態の確認だけでは操作権を取得しない
 print(observer.capabilities())
@@ -25,7 +25,9 @@ observer.close()
 ple = GuiPLE(endpoint="/path/to/ple-gui-....json")
 ```
 
-`GuiPLE.launch(executable, profile=..., endpoint_directory=...)` は指定プロファイルで新しいGUIを起動し、そのPIDのendpointへ接続します。明示したプロファイルが不正ならGUI起動を失敗させ、別の既定設定へ切り替えません。
+`GuiClient`は`GuiPLE`の共通名です。`GuiClient.launch(executable=None, profile=..., endpoint_directory=...)` は指定プロファイルで新しいGUIを起動し、そのPIDのendpointへ接続します。明示したプロファイルが不正ならGUI起動を失敗させ、別の既定設定へ切り替えません。
+
+実行ファイルは明示指定、`KOHDALAB_PLE_EXE`、PATH、同梱フォルダーや既知のMac配置先の順に探索します。`find_binary()`で起動せず確認できます。明示指定が不正なら別の版へ切り替えません。探索はファイル確認のみです。
 
 ## 操作権と停止
 
@@ -45,6 +47,7 @@ GUIが応答しない場合はハートビートの監視も遅れます。API�
 | `config`, `plan`, `output` | 設定、走査計画、保存先を取得 |
 | `spectrum`, wireの`preview` / `background` | 最新／最初のPL、生counts、BG差分、BGを取得。描画用に間引いた値ではない |
 | `apply_spectrometer(settings, request_id=…)` | 接続済み分光器に露光・合成frames・中心波長・grating・timeoutを適用し読戻すjob。測定・移動中は拒否 |
+| `set_background(background)` / `shutter_status()` | 自動BG方式・CH・endpointを設定／shutter状態を参照。[kohdalab-shutter連携](shutter.md) |
 | `configure(config)` | 全機器切断中にプロファイルを置換。GUIと同じ検証を実施 |
 | `set_plan(scan)`, `set_output(directory=..., sample=...)` | アイドル中に走査・保存先を変更 |
 | `connect`, `disconnect` | `spectrometer`, `stage`, `power`を順番に処理。途中失敗・Stopで残りを中止 |

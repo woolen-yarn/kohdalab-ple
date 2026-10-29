@@ -2,6 +2,12 @@
 
 ## Unreleased / 未リリース
 
+## 0.3.0 — 2026-10-29
+
+- Enable authenticated local GUI API on ordinary startup, add the common `GuiClient` alias and executable discovery, BG configuration and shutter-state API operations. / 通常起動のGUI外部APIとPython/Jupyter利用を整備。
+- Add native Rust kohdalab-shutter protocol-2 integration for automatic BG, with exclusive ownership, settled controller state, retained uncertain requests and verified Close/release cleanup. / kohdalab-shutterで自動BG・停止・復旧と測定記録に対応。
+- Keep manual BG, legacy MFF profiles and mandatory subtraction; Demo never contacts a physical shutter GUI. / 手動BG・MFF・BG差分を維持し、Demoは実機シャッターへ接続しない。
+
 ## 0.2.3 — 2026-10-29
 
 - Compute the Windows binary checksum using .NET so packaging does not depend on optional PowerShell hash cmdlets. / Windowsのハッシュ計算を標準.NETへ変更。

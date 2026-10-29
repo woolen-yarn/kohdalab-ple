@@ -57,10 +57,20 @@ pub enum BackgroundMode {
     Manual,
     Automatic,
 }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ShutterBackend {
+    #[default]
+    Mff,
+    KohdalabShutter,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct BackgroundConfig {
     pub mode: BackgroundMode,
+    pub backend: ShutterBackend,
+    pub endpoint: String,
+    pub channel: usize,
     pub shutter_serial: String,
     pub closed_state: u8,
     pub open_state: u8,
@@ -70,6 +80,9 @@ impl Default for BackgroundConfig {
     fn default() -> Self {
         Self {
             mode: BackgroundMode::Manual,
+            backend: ShutterBackend::Mff,
+            endpoint: String::new(),
+            channel: 0,
             shutter_serial: String::new(),
             closed_state: 1,
             open_state: 0,
@@ -350,12 +363,23 @@ impl Config {
             return Err("Shutter timeout must be finite and between 0 and 120 seconds".into());
         }
         if self.background.mode == BackgroundMode::Automatic {
-            if self.background.closed_state == self.background.open_state {
+            if self.background.backend == ShutterBackend::Mff
+                && self.background.closed_state == self.background.open_state
+            {
                 return Err("Automatic shutter needs distinct open and closed states".into());
             }
-            if self.mode == Mode::Hardware && self.background.shutter_serial.trim().is_empty() {
+            if self.mode == Mode::Hardware
+                && self.background.backend == ShutterBackend::Mff
+                && self.background.shutter_serial.trim().is_empty()
+            {
                 return Err("Enter the shutter serial for automatic BG acquisition".into());
             }
+        }
+        if self.background.channel > 255 {
+            return Err(
+                "Shutter channel must be within 0–255; actual channels are verified on connection"
+                    .into(),
+            );
         }
         if !self.power.wavelength_tolerance_nm.is_finite()
             || self.power.wavelength_tolerance_nm <= 0.
@@ -803,6 +827,26 @@ mod tests {
         );
     }
     use super::*;
+    #[test]
+    fn external_shutter_profile_does_not_require_mff_serial_or_states() {
+        let mut c = Config {
+            mode: Mode::Hardware,
+            ..Default::default()
+        };
+        c.background.mode = BackgroundMode::Automatic;
+        c.background.backend = ShutterBackend::KohdalabShutter;
+        c.background.closed_state = 0;
+        c.background.open_state = 0;
+        c.spectrometer.experiment = "test".into();
+        c.power.resource = "USB::test".into();
+        c.power.driver_path = "driver".into();
+        assert!(c.plan().is_ok());
+        c.background.channel = 256;
+        assert!(c.plan().is_err());
+        let legacy: BackgroundConfig =
+            serde_json::from_str(r#"{"mode":"automatic","shutter_serial":"123"}"#).unwrap();
+        assert_eq!(legacy.backend, ShutterBackend::Mff);
+    }
     #[test]
     fn shutter_states_are_explicit_device_values_and_not_assumed_zero_one() {
         let mut c = Config::default();

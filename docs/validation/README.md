@@ -1,3 +1,11 @@
+# v0.3.0 外部API・自動BG — 2026-10-29
+
+[kohdalab-shutter連携](../reference/shutter.md)と通常起動GUI APIを追加。模擬APIでは、排他操作、状態待ち、通信応答喪失、global busy、lease喪失、Close/Release復旧を検証します。ネイティブDemoでは手動BGと自動BG、初回PLの保持、解析確定と保存、heartbeat失効停止を確認します。macOSネイティブGUIでの[実行記録](gui-api-bg-0.3.0.json)は手動BG・自動BGの完了run 2件の保存検証も含みます。Releaseの`VALIDATION.json`は配布CIの結果として区別します。物理Pico・実光路・メーカーSDKの試験は現地の[実機確認](../guides/hardware-qualification.md)へ進みます。
+
+以下は過去の版の記録です。
+
+---
+
 # v0.2.3 実機検証用プレビュー — 2026-10-29
 
 自動機器識別を含む版です。[Release v0.2.3](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.3)の`VALIDATION.json`に今回のソフト検証、`BUILD-ORIGIN.json`にソースcommitとZIP／実行ファイルのSHA-256を記録します。WindowsではZIPを展開した実行ファイルの版番号・設定検査を実施し、PE依存関係と静的CRTを確認します。実機SDK接続と実際の機器は現地の[実機確認](../guides/hardware-qualification.md)で検証します。

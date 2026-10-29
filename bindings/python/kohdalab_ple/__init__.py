@@ -1,4 +1,4 @@
-"""Client for the opt-in KohdaLab PLE GUI API.
+"""Client for the local KohdaLab PLE GUI API.
 
 The GUI retains all device ownership.  This module only attaches to its private
 loopback endpoint; it never opens LightField, CONEX, or a power meter itself.
@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import shutil
 import subprocess
 import threading
 import time
@@ -144,6 +145,10 @@ class GuiPLE:
     def plan(self) -> dict[str, Any]: return self._call("plan")
     def output(self) -> dict[str, Any]: return self._call("output")
     def spectrum(self) -> dict[str, Any]: return self._call("spectrum")
+    def devices(self) -> dict[str, Any]: return self._call("devices")
+    def background(self) -> dict[str, Any]: return self._call("background")
+    def preview(self) -> dict[str, Any]: return self._call("preview")
+    def shutter_status(self) -> dict[str, Any]: return self._call("shutter")
     def result(self, request_id: str) -> dict[str, Any]: return self._call("result", request_id=request_id)
 
     def acquire(self) -> dict[str, Any]:
@@ -163,6 +168,8 @@ class GuiPLE:
         return result
 
     def configure(self, config: dict[str, Any], *, request_id: str | None = None) -> dict[str, Any]: return self._call("configure", lease=True, config=config, request_id=request_id or str(uuid.uuid4()))
+    def set_background(self, background: dict[str, Any], *, request_id: str | None = None) -> dict[str, Any]:
+        return self._call("set_background", lease=True, background=background, request_id=request_id or str(uuid.uuid4()))
     def set_plan(self, scan: dict[str, Any], *, request_id: str | None = None) -> dict[str, Any]: return self._call("set_plan", lease=True, scan=scan, request_id=request_id or str(uuid.uuid4()))
     def set_output(self, *, directory: str | None = None, sample: str | None = None, request_id: str | None = None) -> dict[str, Any]:
         return self._call("set_output", lease=True, request_id=request_id or str(uuid.uuid4()), **{k:v for k,v in {"directory":directory,"sample":sample}.items() if v is not None})
@@ -253,8 +260,9 @@ class GuiPLE:
     def __exit__(self, *_: Any) -> None: self.close()
 
     @classmethod
-    def launch(cls, executable: str | Path, *, profile: str | Path | None = None,
+    def launch(cls, executable: str | Path | None = None, *, profile: str | Path | None = None,
                endpoint_directory: str | Path | None = None, timeout: float = 10.0) -> "GuiPLE":
+        executable = find_binary(executable)
         directory = Path(endpoint_directory or cls._run_directory())
         directory.mkdir(parents=True, exist_ok=True)
         command = [str(executable), "--gui-api", "--api-dir", str(directory)]
@@ -263,7 +271,10 @@ class GuiPLE:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             for path in directory.glob(f"ple-gui-{process.pid}-*.json"):
-                try: return cls(path)
+                try:
+                    client = cls(path)
+                    cls._probe(client.endpoint)
+                    return client
                 except GuiPLEError: pass
             if process.poll() is not None: raise GuiPLEError("PLE GUI failed to launch", "launch")
             time.sleep(0.05)
@@ -273,3 +284,32 @@ class GuiPLE:
     def __del__(self) -> None:
         if hasattr(self,"_heartbeat_stop"): self._clear_lease()
 
+
+
+def find_binary(executable: str | Path | None = None) -> Path:
+    """Resolve an installed/portable GUI without starting it or probing devices."""
+    explicit = executable if executable is not None else os.environ.get("KOHDALAB_PLE_EXE")
+    def normalize(path: Path) -> Path:
+        path = path.expanduser()
+        if path.suffix == ".app": return path / "Contents/MacOS/kohdalab-ple"
+        if path.is_dir(): return path / ("kohdalab-ple.exe" if os.name == "nt" else "kohdalab-ple")
+        return path
+    if explicit is not None:
+        candidate = normalize(Path(explicit)).resolve()
+        if not candidate.is_file(): raise GuiPLEError(f"PLE executable not found: {candidate}", "discovery")
+        return candidate
+    candidates = []
+    found = shutil.which("kohdalab-ple")
+    if found: candidates.append(Path(found))
+    roots = [Path.cwd(), Path(__file__).resolve().parents[3]]
+    for root in roots:
+        candidates.extend(root / name for name in ("kohdalab-ple.exe", "kohdalab-ple", "target/release/kohdalab-ple.exe", "target/release/kohdalab-ple", "dist/kohdalab-ple-windows/kohdalab-ple.exe", "dist/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
+    candidates.extend(Path.home() / folder / "KohdaLab PLE.app/Contents/MacOS/kohdalab-ple" for folder in ("Applications",))
+    candidates.append(Path("/Applications/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
+    for candidate in candidates:
+        if candidate.is_file(): return candidate.resolve()
+    raise GuiPLEError("No PLE executable found; pass executable= or set KOHDALAB_PLE_EXE", "discovery")
+
+
+# Common GUI-client naming used across KohdaLab applications.
+GuiClient = GuiPLE

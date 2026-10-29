@@ -34,3 +34,7 @@ This inventory does not include vendor SDK DLLs or their redistribution rights.
 The documentation link checker (`scripts/check_docs.py`) is adapted from the
 MIT-licensed KohdaLab TRKR repository at commit `066f8968`. The upstream MIT
 notice remains in `kohdalab-trkr/LICENSE`.
+
+## kohdalab-shutter Windows companion
+
+GitHub Windows releases may include the separately built GUI/CLI of MIT-licensed [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) at commit `8d22245899c36206622341ed5957919508aac0a1` (package 0.4.1, GUI API protocol 2). Its upstream LICENSE, matching source archive and dependency license texts are retained under `companions/kohdalab-shutter`. The PLE executable communicates with this program; it does not incorporate its Rust implementation or flash firmware.

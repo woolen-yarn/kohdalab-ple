@@ -1,5 +1,5 @@
 //! Device boundaries. No GUI thread performs instrument I/O.
-use crate::{engine::Event, remote_stage::RemoteStage};
+use crate::{engine::Event, remote_stage::RemoteStage, shutter_client::ExternalShutter};
 use ple_core::{Config, Mode, Spectrum, StageConfig, StageProtocol};
 use serde_json::{Value, json};
 use std::{
@@ -272,9 +272,15 @@ pub struct Spectrometer {
     acquisitions: usize,
     actual_settings: Value,
     shutter_attached: bool,
+    shutter_readback: Mutex<Value>,
+    external_shutter: Arc<Mutex<Option<Arc<ExternalShutter>>>>,
+    cancel: Arc<AtomicBool>,
 }
 impl Drop for Spectrometer {
     fn drop(&mut self) {
+        if let Some(shutter) = self.external_shutter.lock().unwrap().as_ref() {
+            shutter.request_close();
+        }
         if let Some(rpc) = &self.rpc {
             let _ = rpc.request("shutdown", json!({}), Duration::from_secs(5));
         }
@@ -285,6 +291,8 @@ impl Spectrometer {
         c: &Config,
         events: mpsc::Sender<Event>,
         stop_handle: &Mutex<Option<RpcClient>>,
+        external_shutter: Arc<Mutex<Option<Arc<ExternalShutter>>>>,
+        cancel: Arc<AtomicBool>,
     ) -> Result<Self, String> {
         let mut actual_settings = json!({"demo":true,"exposure_ms":c.spectrometer.exposure_ms,"frames_combined":c.spectrometer.frames_combined,"center_nm":c.spectrometer.center_nm,"grating":c.spectrometer.grating});
         let rpc = if c.mode == Mode::Hardware {
@@ -308,9 +316,18 @@ impl Spectrometer {
             acquisitions: 0,
             actual_settings,
             shutter_attached: false,
+            shutter_readback: Mutex::new(Value::Null),
+            external_shutter,
+            cancel,
         })
     }
     pub fn disconnect(&mut self) -> Result<(), String> {
+        let external = self.external_shutter.lock().unwrap().clone();
+        if let Some(shutter) = external {
+            shutter.shutdown()?;
+            *self.external_shutter.lock().unwrap() = None;
+            self.shutter_attached = false;
+        }
         if self.shutter_attached {
             self.set_shutter(true)?;
         }
@@ -348,6 +365,12 @@ impl Spectrometer {
         self.actual_settings.clone()
     }
     pub fn prepare_shutter(&mut self, c: &Config) -> Result<(), String> {
+        let previous = self.external_shutter.lock().unwrap().clone();
+        if let Some(shutter) = previous {
+            shutter.shutdown()?;
+            *self.external_shutter.lock().unwrap() = None;
+            self.shutter_attached = false;
+        }
         if self.shutter_attached {
             self.set_shutter(true)?;
             if let Some(rpc) = &self.rpc {
@@ -356,20 +379,62 @@ impl Spectrometer {
             self.shutter_attached = false;
         }
         if c.background.mode == ple_core::BackgroundMode::Automatic {
-            if let Some(rpc) = &self.rpc {
-                rpc.request(
-                    "shutter_connect",
-                    json!({"serial":c.background.shutter_serial,"closed_state":c.background.closed_state,"open_state":c.background.open_state,"timeout_s":c.background.timeout_s}),
-                    timeout(c.background.timeout_s + 5.),
+            if c.mode == Mode::Hardware
+                && c.background.backend == ple_core::ShutterBackend::KohdalabShutter
+            {
+                let endpoint = (!c.background.endpoint.trim().is_empty())
+                    .then(|| PathBuf::from(&c.background.endpoint));
+                let shutter = ExternalShutter::connect(
+                    endpoint,
+                    c.background.channel,
+                    c.background.timeout_s,
+                    self.cancel.clone(),
                 )?;
+                if let Some(rpc) = self.rpc.clone() {
+                    shutter.set_cancel_hook(Arc::new(move || rpc.stop()));
+                }
+                *self.external_shutter.lock().unwrap() = Some(shutter);
+            } else if let Some(rpc) = &self.rpc {
+                rpc.request("shutter_connect",json!({"serial":c.background.shutter_serial,"closed_state":c.background.closed_state,"open_state":c.background.open_state,"timeout_s":c.background.timeout_s}),timeout(c.background.timeout_s + 5.))?;
             }
             self.shutter_attached = true;
         }
         Ok(())
     }
+    pub fn finish_shutter(&mut self) -> Result<(), String> {
+        let external = self.external_shutter.lock().unwrap().clone();
+        if let Some(shutter) = external {
+            shutter.shutdown()?;
+            let mut snapshot = shutter.snapshot();
+            snapshot["control_released"] = json!(true);
+            *self.shutter_readback.lock().unwrap() = snapshot;
+            *self.external_shutter.lock().unwrap() = None;
+            self.shutter_attached = false;
+        }
+        Ok(())
+    }
+    pub fn shutter_snapshot(&self) -> Value {
+        if let Some(shutter) = self.external_shutter.lock().unwrap().as_ref() {
+            return shutter.snapshot();
+        }
+        if self.mode == Mode::Hardware
+            && self.config.background.backend == ple_core::ShutterBackend::KohdalabShutter
+        {
+            let cached = self.shutter_readback.lock().unwrap().clone();
+            if !cached.is_null() {
+                return cached;
+            }
+        }
+        json!({"connected":self.shutter_attached,"backend":self.config.background.backend,"mode":self.mode,"state":self.shutter_readback.lock().unwrap().clone(),"feedback":if self.mode==Mode::Demo {"simulated"} else {"device_state_not_optical_sensor"}})
+    }
     pub fn set_shutter(&self, closed: bool) -> Result<(), String> {
         if !self.shutter_attached {
             return Err("Automatic shutter is not connected".into());
+        }
+        let external = self.external_shutter.lock().unwrap().clone();
+        if let Some(shutter) = external {
+            *self.shutter_readback.lock().unwrap() = shutter.set_closed(closed)?;
+            return Ok(());
         }
         if let Some(rpc) = &self.rpc {
             let r = rpc.request(
@@ -380,6 +445,9 @@ impl Spectrometer {
             if r["closed"].as_bool() != Some(closed) {
                 return Err("Shutter readback did not confirm requested optical state".into());
             }
+            *self.shutter_readback.lock().unwrap() = r;
+        } else {
+            *self.shutter_readback.lock().unwrap() = json!({"closed":closed,"simulated":true});
         }
         Ok(())
     }

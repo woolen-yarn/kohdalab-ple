@@ -21,6 +21,7 @@
 - [Laboratory apparatus and setup / 装置リスト・接続準備](reference/laboratory-apparatus.md)
 - [Hardware and official downloads / 対応機器・公式入手先](reference/hardware.md)
 - [GUI API](reference/gui-api.md)
+- [Automatic BG with kohdalab-shutter / 自動BG](reference/shutter.md)
 - [Measurement and storage / 測定・保存](reference/measurement.md)
 - [SDK bridge protocol / SDKブリッジ](../bridge/README.md)
 

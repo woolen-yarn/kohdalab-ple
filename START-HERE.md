@@ -1,4 +1,4 @@
-# KohdaLab PLE v0.2.3 — Windows実機検証の入口
+# KohdaLab PLE v0.3.0 — Windows実機検証の入口
 
 ZIP全体を展開し、このファイルと同じフォルダーの`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
 
@@ -22,3 +22,9 @@ ZIP全体を展開し、このファイルと同じフォルダーの`kohdalab-p
 同じ取得スペクトルに励起ピークとPLが入ることが必要です。搭載光学系、フィルター、検出器範囲、飽和、実測位置–波長校正、センサーの補正波長は現地で確認します。Connectはレーザー始動やCONEX原点復帰を行いません。
 
 この版は実機検証用プレビューです。ソフトウェアの自動検査と、設置済み機器の動作・校正確認を区別します。詳細な結果はReleaseの`VALIDATION.json`、実行ファイルの依存関係は`windows-imports.txt`を参照してください。
+
+## 外部APIとkohdalab-shutter
+
+通常のPLE GUIには同じPCの`GuiClient()`から接続できます。`python -m pip install ./bindings/python`でクライアントを導入します。[外部API](docs/reference/gui-api.md)と[kohdalab-shutter自動BG](docs/reference/shutter.md)を参照してください。
+
+自動BGを使う場合は、同梱の`companions/kohdalab-shutter/Start-Shutter.cmd`でGUIを起動し、Picoを接続してLocal control APIを有効化します。PLEで`examples/ple-shutter-settings.json`を基に実接続先を設定し、Automatic shutter → kohdalab-shutterと物理CHを選びます。GUI/APIが複数の場合だけendpointファイルを明示します。

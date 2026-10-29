@@ -11,7 +11,7 @@
 | Remote JSON server / サーバー | Revision 1, newline-delimited JSON, separate status/Stop connections / JSON一行通信・独立した監視と停止 |
 | Legacy TCP / 旧サーバー | Existing GET/move interface; monitored Stop unavailable / 既存GET・移動方式。監視付きStopは提供しない |
 | Power meter / パワーメーター | Existing Thorlabs TLPM .NET helper; W/dBm conversion, wavelength/averaging readback / TLPM系helper・単位換算・波長/平均の読戻し |
-| BG / 背景 | Manual optical confirmation or explicit-state MFF shutter / 手動遮光確認または状態番号を明示したMFF |
+| BG / 背景 | Manual, kohdalab-shutter GUI API, or explicit-state MFF / 手動、[kohdalab-shutter](shutter.md)、MFFを選択 |
 
 The GUI owns measurement planning; the controller-PC service owns COM/Newport SDK access. The reserved [CONEX CC server directory](../../servers/conex-cc/README.md) documents how a later supplied server will be incorporated. Its actual program is pending, and no undocumented protocol is assumed compatible. The current [reference bridge](../../bridge/README.md) remains usable.
 

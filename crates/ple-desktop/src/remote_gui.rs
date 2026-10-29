@@ -1,4 +1,4 @@
-//! Opt-in, loopback-only GUI control transport.
+//! Token-authenticated, loopback-only GUI control transport.
 //!
 //! The listener never touches instruments.  It forwards authenticated requests
 //! to the desktop event loop through a bounded channel, where the existing

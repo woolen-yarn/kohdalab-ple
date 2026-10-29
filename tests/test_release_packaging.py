@@ -39,6 +39,24 @@ class ReleasePackagingTests(unittest.TestCase):
             self.assertFalse(validation["physical_hardware_tested"])
             self.assertFalse(validation["native_gui_window_tested"])
             self.assertEqual(json.loads((output / "BUILD-ORIGIN.json").read_text())["commit"],"fixture-commit")
+            with self.assertRaisesRegex(ValueError,"Required shutter companion"):
+                metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run",require_shutter=True)
+            windows = output / "KohdaLab-PLE-v1.2.3-windows-x64.zip"
+            with zipfile.ZipFile(windows) as contents:
+                members={name:contents.read(name) for name in contents.namelist()}
+            prefix="package/companions/kohdalab-shutter/"
+            companion_binary=b"companion-fixture"
+            companion={"commit":"8d22245899c36206622341ed5957919508aac0a1","protocol":2,"gui_sha256":hashlib.sha256(companion_binary).hexdigest(),"cli_sha256":hashlib.sha256(companion_binary).hexdigest()}
+            members.update({prefix+"companion-origin.json":json.dumps(companion).encode(),prefix+"kohdalab-shutter-gui.exe":companion_binary,prefix+"kohdalab-shutter.exe":companion_binary})
+            for name in ("source.zip","LICENSE","Start-Shutter.cmd","third_party/rust/NOTICE.json"):members[prefix+name]=b"fixture"
+            for program in ("gui","cli"):
+                members[prefix+f"shutter-{program}-metadata.json"]=json.dumps({"executable_sha256":hashlib.sha256(companion_binary).hexdigest(),"external_vc_runtime_required":False}).encode()
+                members[prefix+f"shutter-{program}-imports.txt"]=b"KERNEL32.dll\n"
+            with zipfile.ZipFile(windows,"w") as contents:
+                for name,data in members.items():contents.writestr(name,data)
+            release.write_checksum(output,windows,"windows-x64")
+            metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run",require_shutter=True)
+            self.assertEqual(json.loads((output/"BUILD-ORIGIN.json").read_text())["shutter_companion"]["protocol"],2)
             (output / "SHA256SUMS-source.txt").write_text("wrong checksum")
             with self.assertRaisesRegex(ValueError,"checksum mismatch"):
                 metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run")

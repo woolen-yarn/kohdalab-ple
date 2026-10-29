@@ -176,8 +176,12 @@ def configuration_checks(config: dict[str, Any]) -> tuple[list[dict[str, Any]], 
         warnings.append("legacy_tcp is supported but does not provide monitored independent Stop; remote_json is recommended")
     else:
         checks.append(check("CONEX protocol", False, "protocol must be remote_json or legacy_tcp"))
-    if background.get("mode") == "automatic":
+    if background.get("mode") == "automatic" and background.get("backend", "mff") == "mff":
         checks.append(check("automatic shutter serial", required_string(background.get("shutter_serial")), "enter the MFF shutter serial; state mapping remains a physical qualification"))
+    if background.get("mode") == "automatic" and background.get("backend") == "kohdalab_shutter":
+        endpoint = background.get("endpoint", "")
+        checks.append(check("kohdalab-shutter endpoint", isinstance(endpoint,str) and (not endpoint.strip() or Path(endpoint).is_file()), "blank uses GUI discovery; otherwise specify the private endpoint file (no token is printed)"))
+        warnings.append("kohdalab-shutter must be running on this PC with Local control API enabled and the physical Pico connected; settled controller states are not optical sensor confirmation")
     return checks, warnings
 
 
@@ -196,7 +200,7 @@ def report_for(config_path: Path, *, sdk_imports: bool, conex_sdk_dir: str | Non
         for name, module in (("configured 64-bit Python", None), ("pythonnet import", "clr"), ("legacy helper pywin32 import", "win32api")):
             ok, detail = probe_python(python, module)
             checks.append(check(name, ok, detail))
-        if isinstance(background, dict) and background.get("mode") == "automatic":
+        if isinstance(background, dict) and background.get("mode") == "automatic" and background.get("backend", "mff") == "mff":
             ok, detail = probe_python(python, "pylablib")
             checks.append(check("automatic shutter pylablib import", ok, detail))
         power = config.get("power", {})

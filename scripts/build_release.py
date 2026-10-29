@@ -29,6 +29,7 @@ PLATFORMS = ("source", "windows-x64", "macos-arm64")
 SOURCE_PATHS = (
     ".github",
     "bindings",
+    "packaging",
     "bridge",
     "crates",
     "docs",
@@ -131,7 +132,7 @@ def write_checksum(output: Path, artifact: Path, platform: str) -> Path:
     return destination
 
 
-def run_stage_builder(platform: str) -> None:
+def run_stage_builder(platform: str, shutter_source: Path | None = None) -> None:
     if platform == "windows-x64":
         subprocess.run(
             ["powershell", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-windows.ps1"],
@@ -142,6 +143,12 @@ def run_stage_builder(platform: str) -> None:
             ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/inspect-windows-binary.ps1", "-Directory", str(ROOT / "dist" / "kohdalab-ple-windows")],
             cwd=ROOT, check=True,
         )
+        if shutter_source is not None:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-shutter-companion.ps1",
+                 "-SourceDirectory", str(shutter_source.resolve()), "-Destination", str(ROOT / "dist/kohdalab-ple-windows/companions/kohdalab-shutter")],
+                cwd=ROOT, check=True,
+            )
     elif platform == "macos-arm64":
         subprocess.run(["sh", "scripts/package-macos.sh"], cwd=ROOT, check=True)
 
@@ -195,6 +202,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--portable-dir", type=Path, help="pre-staged Windows portable directory")
     parser.add_argument("--macos-app", type=Path, help="pre-staged .app bundle")
     parser.add_argument("--tag", help="tag to validate, normally GITHUB_REF_NAME")
+    parser.add_argument("--shutter-source", type=Path, help="pinned kohdalab-shutter Git checkout to include in Windows portable")
     parser.add_argument("--no-build", action="store_true", help="do not invoke the platform staging helper")
     return parser.parse_args()
 
@@ -211,7 +219,7 @@ def main() -> int:
         artifact, checksum = package_source(output, version)
     else:
         if not args.no_build:
-            run_stage_builder(args.platform)
+            run_stage_builder(args.platform, args.shutter_source)
         artifact, checksum = package_platform(
             output, version, args.platform, args.portable_dir, args.macos_app
         )

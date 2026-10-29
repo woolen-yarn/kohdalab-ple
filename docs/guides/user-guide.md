@@ -43,7 +43,7 @@ cargo run --locked --bin kohdalab-ple -- --auto-demo
 
 1. ConfigでDemo / Hardwareを選択し、各機器のDeviceを開いて接続先を設定します。分光器ではexperiment、中心波長、グレーティング、露光、合成フレーム数を入力できます。グレーティングは元Pythonの3候補・テンプレート保持・任意の正確なLightField名に対応します。接続後の変更は `Apply / read back` で適用します。
 2. 走査開始・終了・刻み（mm）、繰り返し、安定待ち、試料名・保存先を設定します。降順では刻みを負にします。実際の最終点を画面に表示します。
-3. `Analysis / BG settings` で励起光ピークの探索範囲とBG方式を設定します。手動方式は遮光・光路復帰を確認して進めます。自動方式はMFFのserial、遮光状態番号・開状態番号を指定します。番号と光路の対応はセットアップごとに確認します。
+3. `Analysis / BG settings` で励起光ピークの探索範囲とBG方式を設定します。手動方式は遮光・光路復帰を確認して進めます。自動方式は[kohdalab-shutter](../reference/shutter.md)のGUI APIと物理CH、またはMFFのserial・遮光状態番号・開状態番号を指定します。番号と光路の対応はセットアップごとに確認します。
 4. Startで新しいBGを取得し、最初の位置のPLを1回取得します。
 5. BG差し引き済みの最初のPLを見て、`Peak (nm)`、`Integral min`、`Integral max` を決めます。スペクトルのクリックでもピークを指定できます。ピーク追跡半幅はAnalysis設定で指定します。
 6. `Continue` で解析条件を確定し、残りの取得へ進みます。最初のPLは1点目として使い、再取得しません。選択が不正な場合は同じPLを保持して修正を待ちます。

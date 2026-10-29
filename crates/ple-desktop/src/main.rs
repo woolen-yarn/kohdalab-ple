@@ -10,6 +10,7 @@ mod precision;
 mod presentation;
 mod remote_gui;
 mod remote_stage;
+mod shutter_client;
 mod ui;
 mod visuals;
 use eframe::egui::{self, RichText};
@@ -17,7 +18,7 @@ use eframe::egui::{self, RichText};
 use engine::{Command, Controller, Event};
 use ple_core::{
     Acquisition, AnalysisConfig, BackgroundMode, Config, ExcitationMethod, HC_EV_NM, Mode,
-    PeakAnchor, PowerWavelengthMode, Sample, Spectrum, StageProtocol, recording,
+    PeakAnchor, PowerWavelengthMode, Sample, ShutterBackend, Spectrum, StageProtocol, recording,
 };
 use std::{
     collections::VecDeque,
@@ -69,6 +70,7 @@ struct PleApp {
     analysis_confirm_pending: bool,
     spectrometer_settings: serde_json::Value,
     power_hardware: serde_json::Value,
+    shutter_state: serde_json::Value,
     logs: VecDeque<String>,
     stage_history: live_monitor::History,
     power_history: live_monitor::History,
@@ -174,6 +176,7 @@ impl PleApp {
             analysis_confirm_pending: false,
             spectrometer_settings: serde_json::Value::Null,
             power_hardware: serde_json::Value::Null,
+            shutter_state: serde_json::Value::Null,
             logs: VecDeque::new(),
             stage_history: Default::default(),
             power_history: Default::default(),
@@ -311,6 +314,7 @@ impl PleApp {
                     self.connected[i] = connected;
                     if i == 0 && !connected {
                         self.spectrometer_settings = serde_json::Value::Null;
+                        self.shutter_state = serde_json::Value::Null;
                     }
                     self.pending_connections[i] = false;
                     if i == 1 {
@@ -418,6 +422,7 @@ impl PleApp {
                     }
                     self.power_hardware = v;
                 }
+                Event::ShutterState(state) => self.shutter_state = state,
                 Event::PowerWavelength(nm) => self.power_sensor_wavelength = Some(nm),
                 Event::SpectrometerConfigured(result) => {
                     self.spectrometer_configuring = false;
@@ -571,7 +576,10 @@ fn required_arg(args: &mut impl Iterator<Item = String>, option: &str) -> eframe
     })
 }
 fn main() -> eframe::Result {
-    let mut launch = Launch::default();
+    let mut launch = Launch {
+        gui_api: true,
+        ..Default::default()
+    };
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -582,6 +590,7 @@ fn main() -> eframe::Result {
             }
             "--check-config" => launch.check_config = true,
             "--gui-api" => launch.gui_api = true,
+            "--no-gui-api" => launch.gui_api = false,
             "--api-dir" => {
                 launch.api_dir = Some(PathBuf::from(required_arg(&mut args, "--api-dir")?))
             }
@@ -597,7 +606,7 @@ fn main() -> eframe::Result {
             }
             "--help" => {
                 println!(
-                    "kohdalab-ple [--config profile.json] [--check-config] [--version] [--gui-api] [--api-dir directory] [--auto-demo] [--energy] [--power-normalize] [--screenshot image.png]\nHardware connections and motion always require explicit actions. --auto-demo is device-free."
+                    "kohdalab-ple [--config profile.json] [--check-config] [--version] [--gui-api | --no-gui-api] [--api-dir directory] [--auto-demo] [--energy] [--power-normalize] [--screenshot image.png]\nHardware connections and motion always require explicit actions. --auto-demo is device-free."
                 );
                 return Ok(());
             }

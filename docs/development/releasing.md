@@ -48,3 +48,7 @@ macOS bundle versions are derived from the workspace manifest. Both platform sta
 ## Release evidence / 配布証跡
 
 TRKR/IVと同様に、具体的な版のReleaseへZIPとSHA-256をまとめます。Windows版には`START-HERE.md`、`windows-imports.txt`、`windows-metadata.json`を含め、展開したexeの版番号と設定検査をWindowsで実行します。全検証・両OSビルド成功後に、`scripts/release_metadata.py`で各ZIP／Windows exeのハッシュを再照合し、`BUILD-ORIGIN.json`、`VALIDATION.json`、統合`SHA256SUMS.txt`を作成します。結果はソフト検証に限定し、実機検証やネイティブGUI画面の試験と混同しません。
+
+## Shutter companion / 同梱シャッターGUI
+
+Windows CI checks out `woolen-yarn/kohdalab-shutter` at `8d22245899c36206622341ed5957919508aac0a1` under `build/shutter-source`. `--shutter-source build/shutter-source` builds its GUI/CLI with the same static-CRT option, checks imports/CLI help, retains matching source/MIT/Cargo licenses, and stages it under `companions/kohdalab-shutter`. Release metadata requires the companion and verifies its revision/protocol/exe hashes before publishing. No upstream files or firmware are modified. Local custom builds without `--shutter-source` use a separately installed compatible shutter GUI.

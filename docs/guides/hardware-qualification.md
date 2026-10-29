@@ -62,7 +62,7 @@ preflight JSON と失敗内容を保存してください。成功は「導入�
 1. **LightField / 分光器**：指定 PC で experiment、grating、中心波長、露光、合成フレームを接続し、読戻し値を記録します。dark と signal を取得し、生 `.spe` と LightField CSV を保存します。1 ROI・合成フレームの CSV 解析、取得中 Stop、完了または timeout を確認します。
 2. **CONEX-CC**：安全な光路・可動域で Remote JSON server を controller PC に起動します。接続が原点復帰・enable をしないことを確認します。limits/位置を読取り、0–25 mm 外を拒否すること、小移動、読戻し、timeout、移動中の独立 Stop を確認します。controller/SDK version を記録します。`legacy_tcp` の場合はその方式で可能な Stop だけを記録し、独立した監視 Stop を主張しません。
 3. **パワーメーター**：VISA resource、センサー波長読戻し、平均、auto-range、単位、安定値をローカル基準と照合します。sample/sensor correction factor を決めて記録します。位置校正モードでは予定範囲を覆う anchor を測定し、独立した波長値と補間結果を照合します。
-4. **BG / シャッター**：手動 BG ではビーム遮断・復帰の操作者確認を残します。自動 MFF ではまず安全に遮光した状態で open/closed state 番号を実証し、Stop/error 後に fail-closed となることを確認します。state 番号はセットアップ依存です。
+4. **BG / シャッター**：[kohdalab-shutter](../reference/shutter.md)の場合はGUI API、物理CH、STATE対応firmware、実光路の遮光・開放を確認します。移動・整定後の状態を待ち、通信断・操作権喪失時のClose未確認を成功と扱わないことも試験します。STATEは光センサーの確認ではありません。手動 BG ではビーム遮断・復帰の操作者確認を残します。自動 MFF ではまず安全に遮光した状態で open/closed state 番号を実証し、Stop/error 後に fail-closed となることを確認します。state 番号はセットアップ依存です。
 5. **短い PLE**：本番と同じ grating、範囲、peak 探索、解析区間、出力先で保守的な短い scan を行います。BG → 最初の PL → 解析確認 → 残り取得を確認し、別 run で安全な Stop も確認します。どちらの run も上書きしません。
 
 ## 保存 run の整合性検査

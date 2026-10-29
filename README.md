@@ -25,7 +25,7 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| v0.2.3 preview / 実機確認用 | [Release v0.2.3](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.3): Windows x64 portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
+| v0.3.0 preview / 実機確認用 | [Release v0.3.0](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.0): Windows x64 portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
@@ -38,6 +38,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 | Spectrometer / 分光器 | LightField Automation SDK | [LightField software & firmware](https://www.teledynevisionsolutions.com/products/lightfield/) — sign-in may be required / ログインが必要な場合あり |
 | CONEX CC | Controller-PC server; 0–25 mm / 制御PCのサーバー経由 | [Newport CONEX-CC software](https://www.newport.com/f/trb-actuator-conex-kits) — Resources → Software |
 | Power meter / パワーメーター | Legacy TLPM .NET helper / 元zipのTLPM系ラッパー | [Thorlabs power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [OPM](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) |
+| Automatic BG / 自動BG | [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) GUI API protocol 2 | [Setup / 設定](docs/reference/shutter.md) |
 | Optional BG shutter / 任意のBGシャッター | Thorlabs MFF via pylablib | [Thorlabs motion software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) |
 
 [SDK installation and version compatibility / SDKの導入・版の互換性](docs/guides/install.md) · [Hardware and transport / 機器と通信](docs/reference/hardware.md). Manufacturer DLLs are not bundled. / メーカーDLLは同梱しません。
@@ -46,7 +47,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
-[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.2.3 release notes / 更新内容](RELEASE-NOTES.md)
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.0 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 
@@ -75,6 +76,7 @@ bindings/     Optional Python/Jupyter client / 外部操作クライアント
 bridge/       LightField/Thorlabs SDK adapters / ベンダーSDKとの接続
 servers/      Remote controller services / リモート機器サーバー
 examples/     Reviewed profile templates / 設定例
+packaging/    Companion launchers and distribution assets / 同梱アプリの起動・配布資材
 scripts/      Build, package and validation entry points / ビルド・配布・検証
 tests/        Device-free checks / 実機を使わない検証
 docs/         Guides, development, reference, validation and images / 操作・設計・仕様・検証・画像

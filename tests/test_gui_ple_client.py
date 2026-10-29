@@ -56,6 +56,26 @@ class GuiPLETests(unittest.TestCase):
     def tearDown(self):
         self.server.close(); self.directory.cleanup()
 
+    def test_common_client_alias_discovery_and_background_control(self):
+        from kohdalab_ple import GuiClient, find_binary
+        self.assertIs(GuiClient, GuiPLE)
+        client = GuiClient(self.endpoint)
+        client.lease = "lease"
+        settings = {"mode":"automatic","backend":"kohdalab_shutter","endpoint":"","channel":0}
+        client.set_background(settings,request_id="00000000-0000-4000-8000-000000000007")
+        self.assertEqual(self.server.requests[-1]["background"],settings)
+        self.assertEqual(self.server.requests[-1]["action"],"set_background")
+        client.background(); self.assertEqual(self.server.requests[-1]["action"],"background")
+        client.preview(); self.assertEqual(self.server.requests[-1]["action"],"preview")
+        client._clear_lease()
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "gui.exe"
+            executable.touch()
+            self.assertEqual(find_binary(executable),executable.resolve())
+            with patch.dict("os.environ",{"KOHDALAB_PLE_EXE":str(executable)}):
+                self.assertEqual(find_binary(),executable.resolve())
+            with self.assertRaises(GuiPLEError): find_binary(Path(directory)/"missing")
+
     def test_observer_and_leased_motion_envelope(self):
         client = GuiPLE(self.endpoint)
         self.assertFalse(client.status()["busy"])

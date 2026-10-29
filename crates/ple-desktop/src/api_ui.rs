@@ -61,6 +61,11 @@ impl PleApp {
             || self.closing
             || self.api_cleanup
     }
+    pub(super) fn current_shutter_state(&self) -> Value {
+        self.controller
+            .shutter_status()
+            .unwrap_or_else(|| self.shutter_state.clone())
+    }
     fn api_snapshot(&self) -> Value {
         let (stop_pending, stop_error) = self.controller.stop_status();
         json!({"application":"kohdalab-ple","api_version":1,"phase":self.state,
@@ -71,7 +76,7 @@ impl PleApp {
             "awaiting":match self.awaiting{1=>"background_confirmation",2=>"signal_confirmation",3=>"analysis_selection",_=>"none"},
             "devices":{"spectrometer":self.connected[0],"stage":self.connected[1],"power":self.connected[2]},
             "stage_position_mm":self.stage_value,"sensor_power_w":self.power_value,"power_sensor_wavelength_nm":self.power_sensor_wavelength,
-            "analysis":self.analysis_draft,"spectrometer_settings":self.spectrometer_settings,"power_hardware":self.power_hardware,
+            "analysis":self.analysis_draft,"spectrometer_settings":self.spectrometer_settings,"power_hardware":self.power_hardware,"shutter_state":self.current_shutter_state(),"background_settings":self.config.background,
             "last_error":self.message})
     }
     pub(super) fn poll_api(&mut self, ctx: &egui::Context) {
@@ -164,9 +169,9 @@ impl PleApp {
             "capabilities" => {
                 return Ok(
                     json!({"application":"kohdalab-ple","application_version":env!("CARGO_PKG_VERSION"),"api_version":1,"transport_revision":1,
-                "actions":["capabilities","status","devices","config","plan","output","spectrum","background","preview","acquire","heartbeat","release","configure","set_plan","set_output","apply_spectrometer","connect","disconnect","start","move","confirm_background","confirm_signal","select_analysis","result","stop"],
+                "actions":["capabilities","status","devices","config","plan","output","spectrum","background","preview","shutter","acquire","heartbeat","release","configure","set_plan","set_background","set_output","apply_spectrometer","connect","disconnect","start","move","confirm_background","confirm_signal","select_analysis","result","stop"],
                 "history_limit":api::HISTORY_LIMIT,"command_history_limit":api::HISTORY_LIMIT,"lease_timeout_s":10,"headless":false,"arbitrary_device_commands":false,
-                "safety_policy":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true,"automatic_shutter":self.config.background.mode==BackgroundMode::Automatic,"manual_beam_block_required":self.config.background.mode==BackgroundMode::Manual},
+                "safety_policy":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true,"automatic_shutter":self.config.background.mode==BackgroundMode::Automatic,"shutter_backend":self.config.background.backend,"shutter_feedback":"controller_state_not_optical_sensor","manual_beam_block_required":self.config.background.mode==BackgroundMode::Manual},
                 "stage_travel_mm":[0,25],"confirmation_required":true}),
                 );
             }
@@ -177,6 +182,11 @@ impl PleApp {
                 return Ok(s);
             }
             "devices" => return Ok(self.api_snapshot()["devices"].clone()),
+            "shutter" => {
+                return Ok(
+                    json!({"settings":self.config.background,"state":self.current_shutter_state()}),
+                );
+            }
             "config" => return Ok(json!({"profile":self.config,"config_path":self.config_path})),
             "plan" => {
                 return Ok(
@@ -228,6 +238,7 @@ impl PleApp {
             method,
             "configure"
                 | "set_plan"
+                | "set_background"
                 | "set_output"
                 | "confirm_background"
                 | "confirm_signal"
@@ -283,6 +294,19 @@ impl PleApp {
                 self.stage_history.clear();
                 self.power_history.clear();
                 Ok(json!({"configured":true}))
+            }
+            "set_background" => {
+                self.api_idle()?;
+                let mut c = self.config.clone();
+                c.background = serde_json::from_value(
+                    body.get("background")
+                        .cloned()
+                        .ok_or_else(|| Error::new("validation", "background is required"))?,
+                )
+                .map_err(|e| Error::new("validation", e.to_string()))?;
+                c.plan().map_err(|e| Error::new("validation", e))?;
+                self.config = c;
+                Ok(json!({"background":self.config.background}))
             }
             "set_plan" => {
                 self.api_idle()?;
@@ -688,6 +712,36 @@ mod tests {
         (app, ctx, dir, lease)
     }
     #[test]
+    fn background_api_validates_idle_ownership_and_idempotency() {
+        let (mut app, _ctx, _dir, lease) = setup();
+        let body = json!({"action":"set_background","lease":lease,"request_id":crate::remote_gui::new_id().unwrap(),"background":{"mode":"automatic","backend":"kohdalab_shutter","channel":0,"endpoint":""}});
+        let result = call(&mut app, body.clone()).unwrap();
+        assert_eq!(result["background"]["backend"], "kohdalab_shutter");
+        assert_eq!(call(&mut app, body).unwrap(), result);
+        let old = serde_json::to_value(&app.config.background).unwrap();
+        assert!(
+            call(
+                &mut app,
+                json!({"action":"set_background","background":{"mode":"manual"}})
+            )
+            .is_err()
+        );
+        assert!(call(&mut app,json!({"action":"set_background","lease":lease,"background":{"mode":"automatic","backend":"kohdalab_shutter","channel":256}})).is_err());
+        assert_eq!(serde_json::to_value(&app.config.background).unwrap(), old);
+        app.busy = true;
+        assert!(
+            call(
+                &mut app,
+                json!({"action":"set_background","lease":lease,"background":{"mode":"manual"}})
+            )
+            .is_err()
+        );
+        assert_eq!(
+            call(&mut app, json!({"action":"shutter"})).unwrap()["settings"]["backend"],
+            "kohdalab_shutter"
+        );
+    }
+    #[test]
     fn unconfirmed_cleanup_rejects_new_mutations_without_reserving_jobs() {
         let (mut app, _ctx, _dir, lease) = setup();
         app.api_cleanup_error = Some("MFF closed state could not be confirmed".into());
@@ -831,6 +885,8 @@ mod tests {
             ..Default::default()
         };
         config.background.mode = BackgroundMode::Automatic;
+        config.background.backend = ShutterBackend::KohdalabShutter;
+        config.background.endpoint = "missing-demo-endpoint-must-not-be-opened.json".into();
         config.background.closed_state = 7;
         config.background.open_state = 3;
         config.scan.stop_mm = 18.02;

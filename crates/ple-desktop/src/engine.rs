@@ -37,6 +37,7 @@ pub enum Event {
     SpectrometerSettings(serde_json::Value),
     PowerWavelength(f64),
     PowerHardware(serde_json::Value),
+    ShutterState(serde_json::Value),
     SpectrometerConfigured(Result<serde_json::Value, String>),
     Cleanup {
         confirmed: bool,
@@ -65,6 +66,7 @@ pub struct Controller {
     pub events: mpsc::Receiver<Event>,
     cancel: Arc<AtomicBool>,
     spec_cancel: Arc<Mutex<Option<RpcClient>>>,
+    shutter: Arc<Mutex<Option<Arc<crate::shutter_client::ExternalShutter>>>>,
     shutdown: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
     stage: StageClient,
@@ -75,6 +77,10 @@ impl Controller {
         let (events_tx, events) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let spec_cancel = Arc::new(Mutex::new(None::<RpcClient>));
+        let shutter = Arc::new(Mutex::new(
+            None::<Arc<crate::shutter_client::ExternalShutter>>,
+        ));
+        let shutter_handle = shutter.clone();
         let stop = cancel.clone();
         let spec_handle = spec_cancel.clone();
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -107,6 +113,13 @@ impl Controller {
                         let result = match device {
                             "spectrometer" => {
                                 (|| {
+                                    let previous_shutter = shutter_handle.lock().unwrap().clone();
+                                    if spec.is_none()
+                                        && let Some(shutter) = previous_shutter
+                                    {
+                                        shutter.shutdown()?;
+                                        *shutter_handle.lock().unwrap() = None;
+                                    }
                                     let previous = spec_handle.lock().unwrap().clone();
                                     if let Some(previous) = &previous {
                                         previous.wait_for_stop(true)?;
@@ -125,14 +138,19 @@ impl Controller {
                                     }
                                     spec = None;
                                     *spec_handle.lock().unwrap() = None;
-                                    Spectrometer::connect(&c, events_tx.clone(), &spec_handle).map(
-                                        |s| {
-                                            *spec_handle.lock().unwrap() = s.cancel_handle();
-                                            let _ = events_tx
-                                                .send(Event::SpectrometerSettings(s.settings()));
-                                            spec = Some(s);
-                                        },
+                                    Spectrometer::connect(
+                                        &c,
+                                        events_tx.clone(),
+                                        &spec_handle,
+                                        shutter_handle.clone(),
+                                        stop.clone(),
                                     )
+                                    .map(|s| {
+                                        *spec_handle.lock().unwrap() = s.cancel_handle();
+                                        let _ = events_tx
+                                            .send(Event::SpectrometerSettings(s.settings()));
+                                        spec = Some(s);
+                                    })
                                 })()
                             }
                             "stage" => stage.connect(c.clone()),
@@ -384,6 +402,7 @@ impl Controller {
             events,
             cancel,
             spec_cancel,
+            shutter,
             shutdown,
             worker: Some(worker),
             stage,
@@ -421,7 +440,20 @@ impl Controller {
             .unwrap()
             .as_ref()
             .map_or((false, None), RpcClient::stop_status);
-        (stage_pending || spec_pending, stage_error.or(spec_error))
+        let (shutter_pending, shutter_error) = self
+            .shutter
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map_or((false, None), |s| s.stop_status());
+        (
+            stage_pending || spec_pending || shutter_pending,
+            stage_error.or(spec_error).or(shutter_error),
+        )
+    }
+    pub fn shutter_status(&self) -> Option<serde_json::Value> {
+        let shutter = self.shutter.lock().unwrap().clone();
+        shutter.map(|s| s.snapshot())
     }
     pub fn has_spectrometer_owner(&self) -> bool {
         self.spec_cancel.lock().unwrap().is_some()
@@ -439,6 +471,9 @@ impl Controller {
     pub fn stop(&self) {
         self.cancel.store(true, Ordering::Release);
         self.stage.stop();
+        if let Some(shutter) = self.shutter.lock().unwrap().as_ref() {
+            shutter.request_close();
+        }
         if let Some(rpc) = self.spec_cancel.lock().unwrap().as_ref() {
             rpc.stop();
         }
@@ -501,23 +536,35 @@ fn execute(
     spec.configure(c)?;
     let _ = events.send(Event::SpectrometerSettings(spec.settings()));
     recording.hardware(json!({"spectrometer":spec.settings(),"power":power.hardware()?,"mode":c.mode,"source":if c.mode == ple_core::Mode::Hardware {"connected_device_readback"} else {"simulated"}}))?;
-    spec.prepare_shutter(c)?;
-    let result = execute_inner(
-        c, plan, spec, stage, power, stop, commands, events, recording,
-    );
+    let result = spec.prepare_shutter(c).and_then(|()| {
+        let snapshot = spec.shutter_snapshot();
+        let _ = events.send(Event::ShutterState(snapshot.clone()));
+        ple_core::recording::atomic_json(
+            &recording.directory.join("metadata/shutter.json"),
+            &snapshot,
+        )?;
+        recording.event("shutter_connected", snapshot)?;
+        execute_inner(
+            c, plan, spec, stage, power, stop, commands, events, recording,
+        )
+    });
     if c.background.mode == BackgroundMode::Automatic {
         let closed = spec.set_shutter(true);
+        let closed_confirmed = closed.is_ok();
+        let closed = closed.and_then(|()| spec.finish_shutter());
+        let snapshot = spec.shutter_snapshot();
+        let _ = events.send(Event::ShutterState(snapshot.clone()));
         let _ = events.send(Event::Cleanup {
             confirmed: closed.is_ok(),
             error: closed.as_ref().err().cloned(),
         });
         recording.event(
             "shutter_end_close",
-            json!({"confirmed":closed.is_ok(),"error":closed.as_ref().err()}),
+            json!({"controller_state_confirmed":closed_confirmed,"cleanup_confirmed":closed.is_ok(),"physical_optical_sensor_confirmed":false,"state":snapshot,"error":closed.as_ref().err()}),
         )?;
         if let Err(e) = closed {
             return Err(format!(
-                "shutter closed state could not be confirmed: {e}; prior: {}",
+                "shutter cleanup could not be confirmed: {e}; prior: {}",
                 result.err().unwrap_or_default()
             ));
         }
@@ -546,7 +593,9 @@ fn execute_inner(
         check_stop(stop)?;
         let _ = events.send(Event::State("Closing BG shutter".into()));
         spec.set_shutter(true)?;
-        recording.event("shutter_closed", json!({"confirmed":true}))?;
+        let snapshot = spec.shutter_snapshot();
+        let _ = events.send(Event::ShutterState(snapshot.clone()));
+        recording.event("shutter_closed", json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
     }
     check_stop(stop)?;
     let _ = events.send(Event::State("Acquiring background".into()));
@@ -573,9 +622,11 @@ fn execute_inner(
         check_stop(stop)?;
         let _ = events.send(Event::State("Opening signal shutter".into()));
         spec.set_shutter(false)?;
-        recording.event("shutter_opened", json!({"confirmed":true}))?;
+        let snapshot = spec.shutter_snapshot();
+        let _ = events.send(Event::ShutterState(snapshot.clone()));
+        recording.event("shutter_opened",json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
     }
-    recording.event("signal_path_confirmed", json!({"mode":c.background.mode}))?;
+    recording.event("signal_path_confirmed", json!({"mode":c.background.mode,"confirmation_source":if c.background.mode==BackgroundMode::Manual {"operator"} else {"controller_state"},"physical_optical_sensor_confirmed":false}))?;
     // The first acquisition is retained, reviewed, then becomes point 0 / repeat 0.
     let actual = move_point(c, 0, plan.positions_mm[0], stage, stop, events, recording)?;
     let first = acquire_point(
