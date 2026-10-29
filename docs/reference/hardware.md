@@ -1,5 +1,7 @@
 # Hardware and transport / 機器と通信
 
+[装置リスト・メーカー仕様と接続準備](laboratory-apparatus.md)
+
 [SDK downloads and installation / 入手・導入](../guides/install.md) · [Physical qualification / 実機確認](../guides/hardware-qualification.md)
 
 | Role / 役割 | Current contract / 現行仕様 |

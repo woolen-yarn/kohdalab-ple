@@ -71,6 +71,18 @@ class FakeShutter:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_lightfield_missing_export_or_stop_is_detected_at_connection(self):
+        from types import SimpleNamespace
+        spec = bridge.LightFieldSpectrometer()
+        names = ("Load", "Exists", "SetValue", "GetValue", "Acquire", "Stop", "IsReadyToRun", "ExperimentCompleted")
+        spec.experiment = SimpleNamespace(**dict.fromkeys(names, True))
+        spec.file_manager = SimpleNamespace(CreateExportSettings=True, ExportAsync=True)
+        spec._validate_acquisition_api()
+        del spec.experiment.Stop
+        del spec.file_manager.ExportAsync
+        with self.assertRaisesRegex(bridge.BridgeError, "Experiment.Stop.*FileManager.ExportAsync"):
+            spec._validate_acquisition_api()
+
     def test_dark_negative_watts_remain_monitorable_but_not_fake_zero(self):
         p=bridge.LegacyThorlabsPowerMeter();p.meter=FakeLegacyMeter(unit="W",value=-1e-12);self.assertEqual(p.read()["power_w"],-1e-12)
 
@@ -88,6 +100,18 @@ class BridgeTests(unittest.TestCase):
         spec=bridge.LightFieldSpectrometer();spec.experiment=Experiment();spec.stop(.01);self.assertTrue(spec.experiment.IsReadyToRun)
         spec.experiment.Stop=lambda:None;spec.experiment.IsReadyToRun=False
         with self.assertRaisesRegex(bridge.BridgeError,"ready/idle"):spec.stop(.01)
+
+    def test_original_helper_average_tuple_checks_status_and_value(self):
+        class Meter:
+            result = (0, .2)
+            def setAverageTime(self, value): pass
+            def getAverageTime(self): self.averageTimeSet = self.result
+        meter = Meter()
+        self.assertEqual(bridge.LegacyThorlabsPowerMeter._set_meter_average(meter, .2), .2)
+        for result in ((-1, .2), (0, .5), (0,), (0, float('nan'))):
+            meter.result = result
+            with self.subTest(result=result), self.assertRaises(bridge.BridgeError):
+                bridge.LegacyThorlabsPowerMeter._set_meter_average(meter, .2)
 
     def test_ensure_idle_confirms_sdk_stop_and_closes_attached_shutter(self):
         spec,power,shutter=FakeSpectrometer(),FakePower(),FakeShutter();spec.connected=True;shutter.connected=True;shutter.closed=False
@@ -120,6 +144,15 @@ class BridgeTests(unittest.TestCase):
         applied = spectrometer._apply({"exposure_ms": 5, "frames_combined": 2, "center_nm": 710, "grating": ""})
         self.assertEqual(applied["grating"], "template grating")
         self.assertFalse(applied["online_background_correction"])
+        # Simulate a turret change that resets the wavelength. Applying center
+        # first would leave 0 nm and fail the requested readback.
+        original_set = spectrometer.experiment.SetValue
+        def set_with_reset(setting, value):
+            original_set(setting, value)
+            if setting == "grating": original_set("center", 0.)
+        spectrometer.experiment.SetValue = set_with_reset
+        applied = spectrometer._apply({"exposure_ms": 5, "frames_combined": 2, "center_nm": 710, "grating": "selected grating"})
+        self.assertEqual(applied["center_nm"], 710.)
         spectrometer.experiment.values["online_bg"]=True
         with self.assertRaisesRegex(bridge.BridgeError,"settings changed"):spectrometer._assert_expected_settings()
         spectrometer.experiment.values["online_bg"]=False

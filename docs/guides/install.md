@@ -27,6 +27,10 @@ Manufacturer DLLs and the original Thorlabs helper are not redistributed here. K
 
 メーカーDLLと元のThorlabs helperは本リポジトリでは再配布しません。確認済みhelperをローカルに置き、`power.driver_path`で指定します。元zipのTLPM DLL 2本はインストーラー一式や再配布許諾を意味しません。
 
+## Laboratory apparatus / 使用装置
+
+3900S・HRS-300・PM100USB/PM100D・X=COM3/Y=COM4の[装置リストと設定準備](../reference/laboratory-apparatus.md)を先に確認してください。カメラ、実装グレーティング、センサーヘッドは未確定です。旧TLPM DLLの存在はpreflightで検査しますが、DLLのbitness・依存関係・USBドライバー割当の互換性は実機で確認します。
+
 ## Setup / 設定
 
 From the extracted package root / 展開したフォルダーのルートで実行:

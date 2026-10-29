@@ -241,6 +241,11 @@ impl Default for ScanConfig {
 pub struct ApparatusConfig {
     pub laser_model: String,
     pub spectrometer_model: String,
+    pub camera_model: String,
+    pub laser_optics: String,
+    pub power_meter_model: String,
+    pub power_sensor_model: String,
+    pub setup_notes: String,
     pub power_meter_candidates: Vec<String>,
     pub conex_x_default_port: String,
     pub conex_y_default_port: String,
@@ -250,6 +255,11 @@ impl Default for ApparatusConfig {
         Self {
             laser_model: "3900S".into(),
             spectrometer_model: "SpectraPro HRS-300".into(),
+            camera_model: String::new(),
+            laser_optics: String::new(),
+            power_meter_model: String::new(),
+            power_sensor_model: String::new(),
+            setup_notes: String::new(),
             power_meter_candidates: vec!["PM100USB".into(), "PM100D".into()],
             conex_x_default_port: "COM3".into(),
             conex_y_default_port: "COM4".into(),

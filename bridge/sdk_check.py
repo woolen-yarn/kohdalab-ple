@@ -17,11 +17,11 @@ import subprocess
 import sys
 from typing import Any, Callable
 
-REQUIRED_POWER_METHODS = {"setWaveLength", "getWaveLength", "setAverageTime", "getAverageTime", "updatePowerReading"}
+REQUIRED_POWER_METHODS = {"listDevices", "connect", "disconnect", "setWaveLength", "getWaveLength", "setAverageTime", "getAverageTime", "setPowerAutoRange", "updatePowerReading"}
 REQUIRED_CONEX_METHODS = {"OpenInstrument", "CloseInstrument", "SL_Get", "SR_Get", "TP", "TS", "PA_Set", "ST"}
 REQUIRED_LIGHTFIELD_MEMBERS = {
     "Automation": (), "CameraSettings": ("ShutterTimingExposureTime",),
-    "ExperimentSettings": ("FrameSettingsFramesCombined", "FileNameGenerationDirectory", "FileNameGenerationBaseFileName", "OnlineCorrectionsBackgroundCorrectionEnabled"),
+    "ExperimentSettings": ("FrameSettingsFramesCombined", "FileNameGenerationDirectory", "FileNameGenerationBaseFileName", "FileNameGenerationAttachIncrement", "FileNameGenerationAttachDate", "FileNameGenerationAttachTime", "OnlineCorrectionsBackgroundCorrectionEnabled"),
     "SpectrometerSettings": ("GratingCenterWavelength", "Grating"), "ExportFileType": ("Csv",),
 }
 
@@ -58,6 +58,10 @@ def inspect_legacy_power(driver_path: str) -> list[dict[str, Any]]:
     helper, dll_dir = root / "ThorlabsPowerMeter.py", root / "Thorlabs_DotNet_dll"
     checks = [check("legacy power helper file", helper.is_file(), f"expected {helper}"),
               check("legacy power SDK directory", dll_dir.is_dir(), f"expected {dll_dir}")]
+    for name in ("TLPM_64.dll", "Thorlabs.TLPM_64.Interop.dll"):
+        dll = dll_dir / name
+        checks.append(check(f"legacy power {name}", dll.is_file(),
+                            f"expected {dll}; TLPMX/PM100D DLLs are not drop-in replacements"))
     if helper.is_file():
         try:
             missing = sorted(REQUIRED_POWER_METHODS - helper_methods(helper))
@@ -160,6 +164,11 @@ def configuration_checks(config: dict[str, Any]) -> tuple[list[dict[str, Any]], 
     minimum, maximum = stage.get("min_mm"), stage.get("max_mm")
     checks.append(check("CONEX soft range", isinstance(minimum, (int, float)) and isinstance(maximum, (int, float)) and 0 <= minimum < maximum <= 25, "soft range must remain inside 0 to 25 mm"))
     warnings: list[str] = []
+    if not spectrometer.get("grating"):
+        warnings.append("Blank grating preserves the LightField experiment grating; verify its exact readback and wavelength coverage before acquisition")
+    if power.get("wavelength_mode", "fixed") == "fixed":
+        warnings.append("Fixed power-sensor wavelength does not follow a PLE scan; use measured position calibration for wavelength-dependent correction")
+    warnings.append("Camera model/ROI, power sensor identity/range, CONEX axis mapping and laser optics require physical qualification; apparatus model labels do not identify attached devices")
     if stage.get("protocol") == "remote_json":
         checks.append(check("CONEX protocol", True, "remote_json selected; monitored independent Stop is recommended"))
     elif stage.get("protocol") == "legacy_tcp":
@@ -184,7 +193,7 @@ def report_for(config_path: Path, *, sdk_imports: bool, conex_sdk_dir: str | Non
         spectrometer = config.get("spectrometer", {})
         background = config.get("background", {})
         python = spectrometer.get("python", "") if isinstance(spectrometer, dict) else ""
-        for name, module in (("configured 64-bit Python", None), ("pythonnet import", "clr")):
+        for name, module in (("configured 64-bit Python", None), ("pythonnet import", "clr"), ("legacy helper pywin32 import", "win32api")):
             ok, detail = probe_python(python, module)
             checks.append(check(name, ok, detail))
         if isinstance(background, dict) and background.get("mode") == "automatic":

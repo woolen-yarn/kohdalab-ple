@@ -40,6 +40,8 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 [SDK installation and version compatibility / SDKの導入・版の互換性](docs/guides/install.md) · [Hardware and transport / 機器と通信](docs/reference/hardware.md). Manufacturer DLLs are not bundled. / メーカーDLLは同梱しません。
 
+[装置リスト・メーカー仕様と接続準備 / Apparatus and setup](docs/reference/laboratory-apparatus.md)
+
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
 ## Quick start / はじめに

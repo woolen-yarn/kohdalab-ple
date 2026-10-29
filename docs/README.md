@@ -18,6 +18,7 @@
 
 ## Reference / 仕様
 
+- [Laboratory apparatus and setup / 装置リスト・接続準備](reference/laboratory-apparatus.md)
 - [Hardware and official downloads / 対応機器・公式入手先](reference/hardware.md)
 - [GUI API](reference/gui-api.md)
 - [Measurement and storage / 測定・保存](reference/measurement.md)

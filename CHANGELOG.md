@@ -2,6 +2,9 @@
 
 ## Unreleased / 未リリース
 
+- Audit the laboratory apparatus against manufacturer documents, document unknown camera/grating/sensor setup, and add a physical connection sequence. / メーカー仕様との照合・未確定のカメラ等・実機接続手順を追加。
+- Fix the original TLPM helper averaging tuple, apply grating before center wavelength, and detect missing DLLs/SDK APIs before acquisition. / 元helperの平均時間読戻し・設定順序・接続前検査を修正。
+
 - Record the 3900S / SpectraPro HRS-300 lab setup, PM100USB or PM100D candidates, and CONEX X=COM3 / Y=COM4 defaults in profiles and saved settings. / 使用予定の機器構成とCONEXの既定ポートを設定・測定記録へ保存。
 
 - Explicitly restore blocking reads in a Windows TCP test fixture without changing Stop assertions. / Windowsの模擬TCP接続の読み取り設定を明示し、Stopの検証条件を維持。

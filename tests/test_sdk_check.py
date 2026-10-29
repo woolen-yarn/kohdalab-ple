@@ -40,11 +40,24 @@ class SdkCheckTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "Thorlabs_DotNet_dll").mkdir()
+            for name in ("TLPM_64.dll", "Thorlabs.TLPM_64.Interop.dll"):
+                (root / "Thorlabs_DotNet_dll" / name).touch()
             source = "raise RuntimeError('must not execute')\nclass ThorlabsPowerMeter:\n"
             source += "".join(f" def {name}(self): pass\n" for name in sdk_check.REQUIRED_POWER_METHODS)
             (root / "ThorlabsPowerMeter.py").write_text(source)
             checks = sdk_check.inspect_legacy_power(str(root))
         self.assertTrue(all(item["passed"] for item in checks), checks)
+
+    def test_empty_or_tlpmx_only_directory_does_not_pass_legacy_check(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dll_dir = root / "Thorlabs_DotNet_dll"
+            dll_dir.mkdir()
+            (dll_dir / "TLPMX_64.dll").touch()
+            checks = sdk_check.inspect_legacy_power(str(root))
+        missing = [item["name"] for item in checks if not item["passed"]]
+        self.assertIn("legacy power TLPM_64.dll", missing)
+        self.assertIn("legacy power Thorlabs.TLPM_64.Interop.dll", missing)
 
     def test_lightfield_metadata_loader_is_injected_and_never_constructs_automation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -54,6 +67,7 @@ class SdkCheckTests(unittest.TestCase):
             class Static:
                 ShutterTimingExposureTime = FrameSettingsFramesCombined = "setting"
                 FileNameGenerationDirectory = FileNameGenerationBaseFileName = OnlineCorrectionsBackgroundCorrectionEnabled = "setting"
+                FileNameGenerationAttachIncrement = FileNameGenerationAttachDate = FileNameGenerationAttachTime = "setting"
                 GratingCenterWavelength = Grating = Csv = "setting"
             def loader(path: Path):
                 requested.append(path)

@@ -254,9 +254,12 @@ class LightFieldSpectrometer:
         a = self.api
         self._set(a["CameraSettings"].ShutterTimingExposureTime, exposure)
         self._set(a["ExperimentSettings"].FrameSettingsFramesCombined, frames)
-        self._set(a["SpectrometerSettings"].GratingCenterWavelength, center)
         if grating:
             self._set(a["SpectrometerSettings"].Grating, grating)
+            self._wait_ready(20.)
+        # Changing a turret/grating can reset the center or its allowed range.
+        # Apply the requested wavelength to the selected grating, then read back.
+        self._set(a["SpectrometerSettings"].GratingCenterWavelength, center)
         # An empty grating preserves the template grating, but the actual
         # readback is always what is recorded and checked before acquisition.
         self._set(a["ExperimentSettings"].OnlineCorrectionsBackgroundCorrectionEnabled, False)
@@ -282,6 +285,7 @@ class LightFieldSpectrometer:
             self.auto = self.api["Automation"](visible, experiments)
             app = self.auto.LightFieldApplication
             self.experiment, self.file_manager = app.Experiment, app.FileManager
+            self._validate_acquisition_api()
             self.experiment.Load(experiment_name)
             self.completed = self.api["AutoResetEvent"](False)
             self.experiment.ExperimentCompleted += self._on_completed
@@ -293,6 +297,17 @@ class LightFieldSpectrometer:
             self.disconnect()
             raise BridgeError(f"LightField connection failed: {error}") from error
         return self.state()
+
+    def _validate_acquisition_api(self) -> None:
+        # Instance methods cannot be established by the non-motion enum check.
+        # Fail at connection before changing acquisition or grating settings.
+        missing = [f"{label}.{name}"
+                   for label, instance, names in (
+                       ("Experiment", self.experiment, ("Load", "Exists", "SetValue", "GetValue", "Acquire", "Stop", "IsReadyToRun", "ExperimentCompleted")),
+                       ("FileManager", self.file_manager, ("CreateExportSettings", "ExportAsync")))
+                   for name in names if not hasattr(instance, name)]
+        if missing:
+            raise BridgeError(f"LightField acquisition API missing: {', '.join(missing)}")
 
     def _wait_ready(self, timeout_s: float) -> None:
         if self.experiment is None or not hasattr(self.experiment, "IsReadyToRun"):
@@ -547,7 +562,14 @@ class LegacyThorlabsPowerMeter:
     def _set_meter_average(meter: Any, seconds: float) -> float:
         meter.setAverageTime(seconds)
         meter.getAverageTime()
-        actual = _finite("power meter averaging readback", getattr(meter, "averageTimeSet", None), True)
+        actual = getattr(meter, "averageTimeSet", None)
+        # The original ZIP helper stores the complete .NET (status, seconds)
+        # return from getAvgTime(0), unlike its other scalar readback caches.
+        if isinstance(actual, (tuple, list)):
+            if len(actual) != 2 or not isinstance(actual[0], int) or actual[0] < 0:
+                raise BridgeError(f"power meter averaging readback failed: {actual!r}")
+            actual = actual[1]
+        actual = _finite("power meter averaging readback", actual, True)
         if not math.isclose(actual, seconds, rel_tol=0, abs_tol=1e-6):
             raise BridgeError(f"power meter averaging readback {actual} differs from requested {seconds}")
         return actual

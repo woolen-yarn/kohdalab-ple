@@ -74,6 +74,11 @@
       "PM100D"
     ],
     "conex_x_default_port": "COM3",
-    "conex_y_default_port": "COM4"
+    "conex_y_default_port": "COM4",
+    "camera_model": "",
+    "laser_optics": "",
+    "power_meter_model": "",
+    "power_sensor_model": "",
+    "setup_notes": ""
   }
 }
