@@ -46,12 +46,12 @@ jobs:
       - name: Test SDK adapters, clients and packaging without hardware
         run: python -m unittest discover -s tests -v
       - name: Build desktop application
-        run: cargo build --release --locked --bin kohdalab-ple
+        run: cargo build --locked --bin kohdalab-ple
       - name: Validate a profile without GUI or device access
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $output = & ./target/release/kohdalab-ple.exe --check-config --config examples/ple-settings.json
+          $output = & ./target/debug/kohdalab-ple.exe --check-config --config examples/ple-settings.json | Out-String
           if ($LASTEXITCODE -ne 0) { throw 'Application configuration check failed.' }
           $result = $output | ConvertFrom-Json
           if (-not $result.config_valid) { throw 'Application did not return a valid configuration report.' }

@@ -2,6 +2,8 @@
 
 ## Unreleased / 未リリース
 
+- Wait for Windows GUI-subsystem CLI reports in PowerShell and test with a real GUI-subsystem fixture. / PowerShellからGUIアプリの設定確認を行う際、終了と出力を待つよう修正し、Windows用fixtureで検証。
+
 - Align repository landing page, documentation categories, issue/PR templates and release entry points with KohdaLab TRKR. / TRKRとREADME・文書分類・Issue/PR・リリース入口を統一。
 - Add official SDK download links and the pending CONEX CC server integration directory. / SDK入手先と後日提供されるサーバーの受け入れ先を追加。
 - Fix a Windows-only unused test import exposed by GitHub CI. / GitHub CIで判明したWindows限定の未使用importを修正。

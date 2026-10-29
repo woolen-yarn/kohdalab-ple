@@ -32,7 +32,9 @@ try { $sdkReport = $sdkText | ConvertFrom-Json } catch { throw "SDK checker did 
 
 # The app owns authoritative fixed/position-calibration profile validation.
 # --check-config is non-motion and rejects invalid scan plans.
-$appText = & $AppPath --check-config --config $ConfigPath
+# An explicit pipeline waits for Windows GUI-subsystem executables. Without
+# Out-String, PowerShell can close stdout before the application reports JSON.
+$appText = & $AppPath --check-config --config $ConfigPath | Out-String
 $appExit = $LASTEXITCODE
 $appReport = $null
 if ($appExit -eq 0) {

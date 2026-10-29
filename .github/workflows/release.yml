@@ -77,7 +77,7 @@ jobs:
       - name: Validate packaged Windows CLI without devices
         shell: pwsh
         run: |
-          $output = & ./dist/kohdalab-ple-windows/kohdalab-ple.exe --check-config --config examples/ple-settings.json
+          $output = & ./dist/kohdalab-ple-windows/kohdalab-ple.exe --check-config --config examples/ple-settings.json | Out-String
           if ($LASTEXITCODE -ne 0) { throw 'Packaged Windows application failed configuration validation.' }
           $result = $output | ConvertFrom-Json
           if (-not $result.config_valid) { throw 'Packaged application returned no configuration report.' }

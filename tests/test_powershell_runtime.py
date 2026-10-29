@@ -26,7 +26,7 @@ class PowerShellRuntimeTests(unittest.TestCase):
             result = subprocess.run([PWSH, "-NoLogo", "-NoProfile", "-File", str(checker), str(ROOT / "scripts")], capture_output=True, text=True, timeout=30)
             self.assertEqual(result.returncode, 0, result.stderr)
 
-    def _preflight(self, sdk_success=True, app_success=True, sdk_report=None, app_report=True):
+    def _preflight(self, sdk_success=True, app_success=True, sdk_report=None, app_report=True, gui_native=False):
         with tempfile.TemporaryDirectory(prefix="ple preflight ") as temporary:
             root = Path(temporary)
             (root / "scripts").mkdir()
@@ -37,6 +37,11 @@ class PowerShellRuntimeTests(unittest.TestCase):
                 'import json,sys\nprint(json.dumps({"installation_config_pass":' + str(sdk_success if sdk_report is None else sdk_report) + '}))\nsys.exit(' + str(0 if sdk_success else 3) + ')\n')
             app = root / "fake app.ps1"
             app.write_text("$global:LASTEXITCODE = " + str(0 if app_success else 7) + "\n'" + json.dumps({"config_valid":app_report}) + "'\n")
+            if gui_native:
+                source = root / "gui_fixture.rs"
+                source.write_text('#![windows_subsystem = "windows"]\nfn main() { std::thread::sleep(std::time::Duration::from_millis(100)); println!(r#"{{"config_valid":true}}"#); }\n')
+                app = root / "fake gui app.exe"
+                subprocess.run(["rustc", str(source), "--crate-name", "ple_gui_fixture", "-o", str(app)], check=True, capture_output=True, timeout=30)
             profile = root / "profile settings.json"
             profile.write_text(json.dumps({"spectrometer": {"python": sys.executable}}))
             return subprocess.run([PWSH, "-NoLogo", "-NoProfile", "-File", str(wrapper), "-ConfigPath", str(profile), "-AppPath", str(app)], capture_output=True, text=True, timeout=30, cwd=ROOT.parent)
@@ -47,6 +52,12 @@ class PowerShellRuntimeTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertTrue(report["installation_config_pass"])
         self.assertTrue(report["application_check_config"]["config_valid"])
+
+    @unittest.skipUnless(sys.platform == "win32" and shutil.which("rustc"), "Windows GUI-subsystem fixture needs Windows rustc")
+    def test_windows_gui_process_is_awaited_before_reading_its_report(self):
+        result = self._preflight(gui_native=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["application_check_config"]["config_valid"])
 
     def test_zero_exit_code_cannot_override_a_negative_json_result(self):
         for overrides in [{"sdk_report":False}, {"app_report":False}]:
