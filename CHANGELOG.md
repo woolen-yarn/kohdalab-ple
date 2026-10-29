@@ -2,6 +2,10 @@
 
 ## Unreleased / 未リリース
 
+## 0.3.1 — 2026-10-29
+
+- Exclude the independently pinned shutter source checkout from the PLE Cargo workspace so the Windows companion builds without modifying upstream source. v0.3.0 packaging failed before publication.
+
 ## 0.3.0 — 2026-10-29
 
 - Enable authenticated local GUI API on ordinary startup, add the common `GuiClient` alias and executable discovery, BG configuration and shutter-state API operations. / 通常起動のGUI外部APIとPython/Jupyter利用を整備。
