@@ -29,7 +29,7 @@ Manufacturer DLLs and the original Thorlabs helper are not redistributed here. K
 
 ## Laboratory apparatus / 使用装置
 
-3900S・HRS-300・PM100USB/PM100D・X=COM3/Y=COM4の[装置リストと設定準備](../reference/laboratory-apparatus.md)を先に確認してください。カメラ、実装グレーティング、センサーヘッドは未確定です。旧TLPM DLLの存在はpreflightで検査しますが、DLLのbitness・依存関係・USBドライバー割当の互換性は実機で確認します。
+3900S・HRS-300・PM100USB/PM100D・X=COM3/Y=COM4の[装置リストと設定準備](../reference/laboratory-apparatus.md)を先に確認してください。カメラ、実装グレーティング、センサーヘッドは接続時にSDKから自動取得します。SDKが公開しない項目は現地で補足します。旧TLPM DLLの存在はpreflightで検査しますが、DLLのbitness・依存関係・USBドライバー割当の互換性は実機で確認します。
 
 ## Setup / 設定
 

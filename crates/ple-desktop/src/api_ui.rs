@@ -71,7 +71,7 @@ impl PleApp {
             "awaiting":match self.awaiting{1=>"background_confirmation",2=>"signal_confirmation",3=>"analysis_selection",_=>"none"},
             "devices":{"spectrometer":self.connected[0],"stage":self.connected[1],"power":self.connected[2]},
             "stage_position_mm":self.stage_value,"sensor_power_w":self.power_value,"power_sensor_wavelength_nm":self.power_sensor_wavelength,
-            "analysis":self.analysis_draft,"spectrometer_settings":self.spectrometer_settings,
+            "analysis":self.analysis_draft,"spectrometer_settings":self.spectrometer_settings,"power_hardware":self.power_hardware,
             "last_error":self.message})
     }
     pub(super) fn poll_api(&mut self, ctx: &egui::Context) {

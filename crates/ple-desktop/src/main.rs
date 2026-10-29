@@ -68,6 +68,7 @@ struct PleApp {
     analysis_draft: AnalysisConfig,
     analysis_confirm_pending: bool,
     spectrometer_settings: serde_json::Value,
+    power_hardware: serde_json::Value,
     logs: VecDeque<String>,
     stage_history: live_monitor::History,
     power_history: live_monitor::History,
@@ -172,6 +173,7 @@ impl PleApp {
             analysis_draft,
             analysis_confirm_pending: false,
             spectrometer_settings: serde_json::Value::Null,
+            power_hardware: serde_json::Value::Null,
             logs: VecDeque::new(),
             stage_history: Default::default(),
             power_history: Default::default(),
@@ -320,6 +322,7 @@ impl PleApp {
                     if i == 2 {
                         self.power_history.connection_changed(previous, connected);
                         if !connected {
+                            self.power_hardware = serde_json::Value::Null;
                             self.power_value = None;
                             self.power_sensor_wavelength = None;
                         }
@@ -401,7 +404,20 @@ impl PleApp {
                     self.awaiting = 0;
                     self.analysis_confirm_pending = false;
                 }
-                Event::SpectrometerSettings(v) => self.spectrometer_settings = v,
+                Event::SpectrometerSettings(v) => {
+                    if self.config.spectrometer.grating.is_empty()
+                        && let Some(grating) = v["grating"].as_str()
+                    {
+                        self.config.spectrometer.grating = grating.into();
+                    }
+                    self.spectrometer_settings = v;
+                }
+                Event::PowerHardware(v) => {
+                    if self.power_hardware != v {
+                        self.log("Power meter / sensor identification read back");
+                    }
+                    self.power_hardware = v;
+                }
                 Event::PowerWavelength(nm) => self.power_sensor_wavelength = Some(nm),
                 Event::SpectrometerConfigured(result) => {
                     self.spectrometer_configuring = false;

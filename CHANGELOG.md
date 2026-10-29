@@ -2,6 +2,8 @@
 
 ## Unreleased / 未リリース
 
+- Automatically discover SDK-exposed camera/grating/meter/sensor information; replace fixed grating presets with reported capabilities and retain per-run and per-point hardware provenance. / 実機情報を自動取得し、グレーティング候補と測定記録へ反映。
+
 - Audit the laboratory apparatus against manufacturer documents, document unknown camera/grating/sensor setup, and add a physical connection sequence. / メーカー仕様との照合・未確定のカメラ等・実機接続手順を追加。
 - Fix the original TLPM helper averaging tuple, apply grating before center wavelength, and detect missing DLLs/SDK APIs before acquisition. / 元helperの平均時間読戻し・設定順序・接続前検査を修正。
 

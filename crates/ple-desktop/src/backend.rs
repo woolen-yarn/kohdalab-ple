@@ -852,11 +852,13 @@ fn parse_finite(s: &str) -> Result<f64, String> {
         Err("Non-finite device readback".into())
     }
 }
+type PowerReading = (f64, f64, f64, Value);
 pub enum PowerCommand {
     Connect(Box<Config>, mpsc::Sender<Result<(), String>>),
     Disconnect,
-    Read(mpsc::Sender<Result<(f64, f64, f64), String>>),
-    ReadAt(f64, mpsc::Sender<Result<(f64, f64, f64), String>>),
+    Read(mpsc::Sender<Result<PowerReading, String>>),
+    Inventory(mpsc::Sender<Result<Value, String>>),
+    ReadAt(f64, mpsc::Sender<Result<PowerReading, String>>),
     Shutdown(mpsc::Sender<()>),
 }
 #[derive(Clone)]
@@ -893,13 +895,24 @@ impl PowerClient {
                         power = None;
                         worker_connected.store(false, Ordering::Release);
                     }
+                    Ok(PowerCommand::Inventory(reply)) => {
+                        let _ = reply.send(
+                            power
+                                .as_ref()
+                                .map(|p| p.hardware.clone())
+                                .ok_or("Power meter not connected".into()),
+                        );
+                    }
                     Ok(PowerCommand::ReadAt(wavelength, reply)) => {
                         let result = power
                             .as_mut()
                             .ok_or("Power meter not connected".into())
-                            .and_then(|p| p.read_at(wavelength));
+                            .and_then(|p| {
+                                p.read_at(wavelength)
+                                    .map(|(w, t, nm)| (w, t, nm, p.hardware.clone()))
+                            });
                         match &result {
-                            Ok((value, timestamp, actual)) => {
+                            Ok((value, timestamp, actual, _)) => {
                                 let _ = events.send(Event::PowerWavelength(*actual));
                                 let _ = events.send(Event::Telemetry {
                                     device: "power",
@@ -922,8 +935,11 @@ impl PowerClient {
                         let result = power
                             .as_mut()
                             .ok_or("Power meter not connected".into())
-                            .and_then(|p| p.read().map(|(w, t)| (w, t, p.wavelength_nm)));
-                        if let Ok((value, timestamp, actual)) = &result {
+                            .and_then(|p| {
+                                p.read()
+                                    .map(|(w, t)| (w, t, p.wavelength_nm, p.hardware.clone()))
+                            });
+                        if let Ok((value, timestamp, actual, _)) = &result {
                             let _ = events.send(Event::PowerWavelength(*actual));
                             let _ = events.send(Event::Telemetry {
                                 device: "power",
@@ -984,7 +1000,7 @@ impl PowerClient {
             .map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
     }
-    pub fn read_at(&self, wavelength: f64) -> Result<(f64, f64, f64), String> {
+    pub fn read_at(&self, wavelength: f64) -> Result<PowerReading, String> {
         if !wavelength.is_finite() || wavelength <= 0. {
             return Err("Invalid power sensor wavelength".into());
         }
@@ -994,7 +1010,14 @@ impl PowerClient {
             .map_err(|e| e.to_string())?;
         rx.recv().map_err(|e| e.to_string())?
     }
-    pub fn read_with_wavelength(&self) -> Result<(f64, f64, f64), String> {
+    pub fn hardware(&self) -> Result<Value, String> {
+        let (tx, rx) = mpsc::channel();
+        self.tx
+            .send(PowerCommand::Inventory(tx))
+            .map_err(|e| e.to_string())?;
+        rx.recv().map_err(|e| e.to_string())?
+    }
+    pub fn read_with_wavelength(&self) -> Result<PowerReading, String> {
         let (tx, rx) = mpsc::channel();
         self.tx
             .send(PowerCommand::Read(tx))
@@ -1014,6 +1037,8 @@ impl PowerClient {
     }
 }
 struct Power {
+    hardware: Value,
+    events: mpsc::Sender<Event>,
     wavelength_tolerance_nm: f64,
     wavelength_nm: f64,
     rpc: Option<RpcClient>,
@@ -1028,14 +1053,18 @@ impl Drop for Power {
 }
 impl Power {
     fn connect(c: &Config, events: mpsc::Sender<Event>) -> Result<Self, String> {
+        let mut hardware = json!({"demo":true,"source":"simulated"});
         let mut actual_wavelength = c.power.wavelength_nm;
         let rpc = if c.mode == Mode::Hardware {
-            let rpc = RpcClient::start(c, events)?;
+            let rpc = RpcClient::start(c, events.clone())?;
             let state = rpc.request(
                 "connect_power",
                 serde_json::to_value(&c.power).map_err(|e| e.to_string())?,
                 Duration::from_secs(30),
             )?;
+            hardware = state.get("hardware").cloned().unwrap_or_else(
+                || json!({"available":false,"errors":["Bridge did not provide power inventory"]}),
+            );
             actual_wavelength = state["wavelength_nm"]
                 .as_f64()
                 .ok_or("Missing power wavelength readback")?;
@@ -1049,7 +1078,10 @@ impl Power {
         } else {
             None
         };
+        let _ = events.send(Event::PowerHardware(hardware.clone()));
         Ok(Self {
+            hardware,
+            events,
             wavelength_nm: actual_wavelength,
             wavelength_tolerance_nm: c.power.wavelength_tolerance_nm,
             rpc,
@@ -1079,6 +1111,14 @@ impl Power {
     fn read(&mut self) -> Result<(f64, f64), String> {
         let value = if let Some(rpc) = &self.rpc {
             let r = rpc.request("power_read", json!({}), Duration::from_secs(15))?;
+            if let Some(hardware) = r.get("hardware")
+                && *hardware != self.hardware
+            {
+                self.hardware = hardware.clone();
+                let _ = self
+                    .events
+                    .send(Event::PowerHardware(self.hardware.clone()));
+            }
             let readback = r["wavelength_nm"]
                 .as_f64()
                 .ok_or("Missing actual power wavelength")?;
@@ -1373,8 +1413,10 @@ mod tests {
         let power = PowerClient::spawn(tx);
         power.connect(Config::default()).unwrap();
         assert!(power.is_connected());
-        let (w, _, _) = power.read_with_wavelength().unwrap();
+        let (w, _, _, _) = power.read_with_wavelength().unwrap();
         assert!(w > 0.);
+        let inventory = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(matches!(inventory, Event::PowerHardware(v) if v["source"] == "simulated"));
         let wavelength = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(
             matches!(wavelength, Event::PowerWavelength(nm) if nm == Config::default().power.wavelength_nm)

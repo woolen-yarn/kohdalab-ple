@@ -71,6 +71,92 @@ class FakeShutter:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_lightfield_inventory_records_devices_and_grating_choices(self):
+        class Device:
+            def __init__(self, kind, model, serial): self.Type, self.Model, self.SerialNumber = kind, model, serial
+        class Settings: Grating = "grating"
+        class Experiment:
+            ExperimentDevices = [Device("Camera", "PIXIS", "C-1"), Device("Spectrometer", "HRS-300", "S-2")]
+            def GetCurrentCapabilities(self, setting):
+                assert setting == "grating"
+                return ["150 g/mm, 500 nm", "600 g/mm, 750 nm"]
+        spec = bridge.LightFieldSpectrometer()
+        spec.experiment, spec.api = Experiment(), {"SpectrometerSettings": Settings}
+        inventory = spec._hardware_inventory()
+        self.assertTrue(inventory["available"])
+        self.assertEqual(inventory["devices"][0]["serial_number"], "C-1")
+        self.assertEqual(inventory["grating_choices"], ["150 g/mm, 500 nm", "600 g/mm, 750 nm"])
+        self.assertEqual(inventory["errors"], [])
+
+    def test_lightfield_inventory_reports_optional_metadata_failures(self):
+        class Settings: Grating = "grating"
+        class Experiment:
+            @property
+            def ExperimentDevices(self): raise RuntimeError("SDK lacks device list")
+        spec = bridge.LightFieldSpectrometer()
+        spec.experiment, spec.api = Experiment(), {"SpectrometerSettings": Settings}
+        inventory = spec._hardware_inventory()
+        self.assertFalse(inventory["available"])
+        self.assertIn("ExperimentDevices unavailable", inventory["errors"][0])
+        spec.experiment.GetCurrentCapabilities = lambda setting: ["exact grating"]
+        self.assertEqual(spec._hardware_inventory()["grating_choices"], ["exact grating"])
+
+    def test_lightfield_settings_nest_inventory_without_affecting_setting_comparison(self):
+        class Settings:
+            ShutterTimingExposureTime = "exposure"
+            FrameSettingsFramesCombined = "frames"
+            GratingCenterWavelength = "center"
+            Grating = "grating"
+            OnlineCorrectionsBackgroundCorrectionEnabled = "online_bg"
+        class Experiment:
+            IsReadyToRun = True
+            values = {"online_bg": False, "exposure": 1., "frames": 1, "center": 700., "grating": "g"}
+            ExperimentDevices = []
+            def Exists(self, _setting): return True
+            def GetValue(self, setting): return self.values[setting]
+            def GetCurrentCapabilities(self, _setting): return ["g"]
+        spec = bridge.LightFieldSpectrometer()
+        spec.experiment = Experiment()
+        spec.api = {"CameraSettings": Settings, "ExperimentSettings": Settings, "SpectrometerSettings": Settings}
+        settings = spec._read_settings()
+        self.assertEqual(settings["hardware"]["lightfield"]["grating_choices"], ["g"])
+        self.assertTrue(bridge.LightFieldSpectrometer._same_settings(settings, dict(settings)))
+
+    def test_power_inventory_records_meter_and_sensor_without_fabricating_no_sensor(self):
+        meter = FakeLegacyMeter(minimum_nm=400., maximum_nm=1100.)
+        from types import SimpleNamespace
+        meter.deviceNET = SimpleNamespace(getWavelength=lambda selector: (0, 400. if selector == 1 else 1100.))
+        meter.modelName, meter.serialNumber, meter.manufacturer = "PM100USB", "M-1", "Thorlabs"
+        type(meter).driverVersion = "1.2.3"
+        def info():
+            print("helper sensor diagnostics")
+            meter.sensorName, meter.sensorSerialNumber = "S120VC", "H-2"
+            meter.sensorType, meter.sensorSubType = "Photodiode sensor", "Photodiode sensor"
+            meter.sensorCalibrationMessage, meter.sensorFlags = "2026-01", "Power sensor"
+        meter.getSensorInfo = info
+        power = bridge.LegacyThorlabsPowerMeter(); power.resource = "USB::M-1"
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            inventory = power._hardware_inventory(meter)
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertIn("helper sensor diagnostics",stderr.getvalue())
+        self.assertEqual(inventory["model"], "PM100USB")
+        self.assertEqual(inventory["sensor"]["serial_number"], "H-2")
+        self.assertTrue(inventory["sensor"]["available"])
+        self.assertEqual(inventory["wavelength_range_nm"], {"min": 400., "max": 1100.})
+        meter.wavelengthMin, meter.wavelengthMax = 200., 1800.
+        self.assertEqual(power._hardware_inventory(meter)["wavelength_range_nm"], {"min": 400., "max": 1100.})
+        power.meter, power.wavelength_nm = meter, 720.
+        point = power.read()
+        self.assertEqual(point["hardware"]["sensor"]["name"], "S120VC")
+        meter.getSensorInfo = lambda: setattr(meter, "sensorType", "No sensor")
+        inventory = power._hardware_inventory(meter)
+        self.assertFalse(inventory["sensor"]["available"])
+        self.assertIsNone(inventory["sensor"]["name"])
+        with self.assertRaisesRegex(bridge.BridgeError,"no sensor head"):
+            power.read()
     def test_lightfield_missing_export_or_stop_is_detected_at_connection(self):
         from types import SimpleNamespace
         spec = bridge.LightFieldSpectrometer()

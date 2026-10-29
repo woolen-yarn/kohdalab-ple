@@ -375,22 +375,40 @@ impl PleApp {
                             rect(98., 130., w - 118., 26.),
                             &mut self.config.spectrometer.grating,
                         );
-                        let presets = [
-                            ("Template", ""),
-                            ("300/1µm", "[1.0um,300][2][0]"),
-                            ("300/500", "[500nm,300][1][0]"),
-                            ("1200/500", "[500nm,1200][0][0]"),
-                        ];
-                        for (i, (name, value)) in presets.iter().enumerate() {
-                            if f.button(
-                                &format!("grating_{i}"),
-                                rect(20. + i as f32 * 73., 162., 70., 24.),
-                                name,
-                                true,
-                            ) {
-                                self.config.spectrometer.grating = (*value).into();
-                            }
+                        let mut choices =
+                            vec![(String::new(), "Use experiment grating".to_owned())];
+                        if let Some(values) = self
+                            .spectrometer_settings
+                            .pointer("/hardware/lightfield/grating_choices")
+                            .and_then(|v| v.as_array())
+                        {
+                            choices.extend(
+                                values
+                                    .iter()
+                                    .filter_map(|v| v.as_str())
+                                    .map(|v| (v.to_owned(), v.to_owned())),
+                            );
                         }
+                        if !self.config.spectrometer.grating.is_empty()
+                            && !choices
+                                .iter()
+                                .any(|(v, _)| v == &self.config.spectrometer.grating)
+                        {
+                            choices.push((
+                                self.config.spectrometer.grating.clone(),
+                                self.config.spectrometer.grating.clone(),
+                            ));
+                        }
+                        let options: Vec<_> = choices
+                            .iter()
+                            .map(|(v, label)| (v.clone(), label.as_str()))
+                            .collect();
+                        f.combo(
+                            "lf_grating_choices",
+                            rect(20., 162., w - 40., 24.),
+                            &mut self.config.spectrometer.grating,
+                            &options,
+                        );
                         f.label("lf_exposure_label", rect(20., 194., 73., 26.), "Exp. (ms)");
                         f.number(
                             "lf_exposure",
@@ -1382,10 +1400,10 @@ impl PleApp {
             Advanced::Power => 2,
             Advanced::Excitation => 3,
         };
-        egui::Window::new(["LightField settings","CONEX CC settings","Power meter settings","Analysis / BG settings"][index]).id(egui::Id::new("advanced_settings")).open(&mut opened).collapsible(false).resizable(false).show(ctx,|ui|{ui.set_width(480.);ui.add_enabled_ui(!self.api_owned()&&((!locked&&(index==0||index>=3||!self.connected[index]))||(index==3&&self.awaiting==3&&!self.analysis_confirm_pending)),|ui|{match panel{
-  Advanced::Spectrometer=>{ui.label(&self.config.apparatus.spectrometer_model);ui.add_enabled_ui(!self.connected[0],|ui|{label_text(ui,"Camera model (record)",&mut self.config.apparatus.camera_model);label_text(ui,"Setup notes (record)",&mut self.config.apparatus.setup_notes);});ui.label("Read back from LightField:");ui.monospace(serde_json::to_string_pretty(&self.spectrometer_settings).unwrap_or_default());ui.add_enabled_ui(!self.connected[0],|ui|{label_text(ui,"Python executable",&mut self.config.spectrometer.python);label_text(ui,"Bridge script",&mut self.config.spectrometer.bridge_script);ui.checkbox(&mut self.config.spectrometer.visible,"Show LightField");label_number(ui,"Acquisition timeout (s)",&mut self.config.spectrometer.timeout_s,1.);});},
+        egui::Window::new(["LightField settings","CONEX CC settings","Power meter settings","Analysis / BG settings"][index]).id(egui::Id::new("advanced_settings")).open(&mut opened).collapsible(false).resizable(false).show(ctx,|ui|{ui.set_width(480.);if index==2 {ui.label("Automatically read from connected meter / sensor:");egui::ScrollArea::vertical().id_salt("power_readback").max_height(220.).show(ui,|ui|{ui.monospace(serde_json::to_string_pretty(&self.power_hardware).unwrap_or_default());});}ui.add_enabled_ui(!self.api_owned()&&((!locked&&(index==0||index>=3||!self.connected[index]))||(index==3&&self.awaiting==3&&!self.analysis_confirm_pending)),|ui|{match panel{
+  Advanced::Spectrometer=>{ui.label(&self.config.apparatus.spectrometer_model);ui.add_enabled_ui(!self.connected[0],|ui|{label_text(ui,"Camera model (manual fallback)",&mut self.config.apparatus.camera_model);label_text(ui,"Setup notes (record)",&mut self.config.apparatus.setup_notes);});ui.label("Read back from LightField:");egui::ScrollArea::vertical().id_salt("lf_readback").max_height(220.).show(ui,|ui|{ui.monospace(serde_json::to_string_pretty(&self.spectrometer_settings).unwrap_or_default());});ui.add_enabled_ui(!self.connected[0],|ui|{label_text(ui,"Python executable",&mut self.config.spectrometer.python);label_text(ui,"Bridge script",&mut self.config.spectrometer.bridge_script);ui.checkbox(&mut self.config.spectrometer.visible,"Show LightField");label_number(ui,"Acquisition timeout (s)",&mut self.config.spectrometer.timeout_s,1.);});},
   Advanced::Stage=>{ui.label(format!("Port defaults · X: {} / Y: {}",self.config.apparatus.conex_x_default_port,self.config.apparatus.conex_y_default_port));ui.label("The COM port in Device is the active connection; these defaults do not switch axes.");ui.horizontal(|ui|{ui.selectable_value(&mut self.config.stage.protocol,StageProtocol::RemoteJson,"Remote JSON");ui.selectable_value(&mut self.config.stage.protocol,StageProtocol::LegacyTcp,"Legacy TCP");});label_text(ui,"Token environment variable",&mut self.config.stage.token_env);ui.label("Host / port address the remote PC. COM is the port on that PC.");label_number(ui,"Position tolerance (mm)",&mut self.config.stage.tolerance_mm,0.0001);label_number(ui,"Move timeout (s)",&mut self.config.stage.timeout_s,1.);if self.config.stage.protocol==StageProtocol::LegacyTcp{ui.checkbox(&mut self.config.stage.allow_legacy_initialize,"Allow legacy CHECK initialization");ui.label("CHECK may home or enable the stage. Default connection only queries GET.");ui.label("Legacy MOVE cannot be interrupted; Stop waits for completion / timeout.");}else{ui.label("Remote JSON keeps position monitoring and Stop available during movement.");}},
-  Advanced::Power=>{ui.label(format!("Candidate models: {}",self.config.apparatus.power_meter_candidates.join(" / ")));ui.add_enabled_ui(!self.connected[2],|ui|{label_text(ui,"Meter model (record)",&mut self.config.apparatus.power_meter_model);label_text(ui,"Sensor model (record)",&mut self.config.apparatus.power_sensor_model);});ui.horizontal(|ui|{ui.selectable_value(&mut self.config.power.wavelength_mode,PowerWavelengthMode::Fixed,"Fixed sensor wavelength");ui.selectable_value(&mut self.config.power.wavelength_mode,PowerWavelengthMode::PositionCalibration,"Follow position calibration");});label_number(ui,"Excitation agreement tolerance (nm)",&mut self.config.power.wavelength_tolerance_nm,0.1);ui.label("Follow mode sets and verifies sensor wavelength before each power read. Enter position/wavelength anchors in Analysis settings.");label_text(ui,"Legacy driver folder",&mut self.config.power.driver_path);browse=ui.button("Browse").clicked();ui.label("Folder containing ThorlabsPowerMeter.py and Thorlabs_DotNet_dll.");},
+  Advanced::Power=>{ui.label(format!("Candidate models: {}",self.config.apparatus.power_meter_candidates.join(" / ")));ui.add_enabled_ui(!self.connected[2],|ui|{label_text(ui,"Meter model (manual fallback)",&mut self.config.apparatus.power_meter_model);label_text(ui,"Sensor model (manual fallback)",&mut self.config.apparatus.power_sensor_model);});ui.horizontal(|ui|{ui.selectable_value(&mut self.config.power.wavelength_mode,PowerWavelengthMode::Fixed,"Fixed sensor wavelength");ui.selectable_value(&mut self.config.power.wavelength_mode,PowerWavelengthMode::PositionCalibration,"Follow position calibration");});label_number(ui,"Excitation agreement tolerance (nm)",&mut self.config.power.wavelength_tolerance_nm,0.1);ui.label("Follow mode sets and verifies sensor wavelength before each power read. Enter position/wavelength anchors in Analysis settings.");label_text(ui,"Legacy driver folder",&mut self.config.power.driver_path);browse=ui.button("Browse").clicked();ui.label("Folder containing ThorlabsPowerMeter.py and Thorlabs_DotNet_dll.");},
   Advanced::Excitation=>{ui.label(format!("Laser: {}",self.config.apparatus.laser_model));label_text(ui,"Installed optics (record)",&mut self.config.apparatus.laser_optics);ui.horizontal(|ui|{ui.selectable_value(&mut self.config.excitation_method,ExcitationMethod::SpectrumPeak,"Spectrum peak");ui.selectable_value(&mut self.config.excitation_method,ExcitationMethod::Calibration,"Position calibration");});if self.config.excitation_method==ExcitationMethod::SpectrumPeak{label_number(ui,"Excitation search min (nm)",&mut self.config.excitation_min_nm,0.1);label_number(ui,"Excitation search max (nm)",&mut self.config.excitation_max_nm,0.1);label_number(ui,"Minimum peak SNR",&mut self.config.excitation_min_snr,0.5);ui.label("Separate from the PL analysis peak. Maximum-bin detection; median / MAD screening.");}
 if self.config.excitation_method==ExcitationMethod::Calibration||self.config.power.wavelength_mode==PowerWavelengthMode::PositionCalibration{let mut remove=None;egui::Grid::new("excitation_anchors").show(ui,|ui|{ui.label("CONEX (mm)");ui.label("Excitation (nm)");ui.end_row();for(i,a)in self.config.excitation_peaks.iter_mut().enumerate(){ui.add(egui::DragValue::new(&mut a.position_mm).speed(0.001));ui.add(egui::DragValue::new(&mut a.wavelength_nm).speed(0.1));if ui.button("Remove").clicked(){remove=Some(i);}ui.end_row();}});if let Some(i)=remove{self.config.excitation_peaks.remove(i);}
 if ui.button("Add anchor").clicked(){self.config.excitation_peaks.push(PeakAnchor{position_mm:self.config.scan.stop_mm,wavelength_nm:720.});}}label_number(ui,"Peak search ±nm",&mut self.analysis_draft.peak_half_width_nm,0.1);
@@ -1568,6 +1586,7 @@ mod tests {
         let card = rect(g[0], g[1], g[2], g[3]);
         for key in [
             "lf_grating",
+            "lf_grating_choices",
             "lf_exposure",
             "lf_frames",
             "lf_apply",

@@ -7,6 +7,14 @@ error.
 
 ## Protocol revision 1
 
+Connection/readback replies include optional automatic hardware inventory. LightField
+settings carry `hardware.lightfield` with attached device type/model/serial and
+exact grating capability strings. Power replies carry `hardware` with meter and
+current sensor identities, calibration text and freshly queried wavelength limits.
+Missing optional SDK metadata is explicit (`available`, `null`, `errors`) and is
+never replaced with the manually declared apparatus labels. Sensor metadata is
+refreshed per power read. No inventory query changes optical settings.
+
 Each request is one line: `{"revision":1,"id":"unique","op":"state","args":{}}`.
 Each reply is one line with `id`, `ok`, `result`, and `error`. Calls are executed
 serially. `stop` is read on a separate thread so it can request cancellation while

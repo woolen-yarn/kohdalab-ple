@@ -202,7 +202,46 @@ class LightFieldSpectrometer:
             "center_nm": float(self._get(a["SpectrometerSettings"].GratingCenterWavelength)),
             "grating": str(self._get(a["SpectrometerSettings"].Grating)),
             "online_background_correction": bool(self._get(a["ExperimentSettings"].OnlineCorrectionsBackgroundCorrectionEnabled)),
+            "hardware": {"lightfield": self._hardware_inventory()},
         }
+
+    @staticmethod
+    def _device_value(device: Any, *names: str) -> str | None:
+        """Return one documented-or-exposed LightField property without guessing."""
+        for name in names:
+            try:
+                value = getattr(device, name)
+            except Exception:
+                continue
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    def _hardware_inventory(self) -> dict[str, Any]:
+        """Best-effort, read-only inventory; unsupported SDK members never block data."""
+        result: dict[str, Any] = {"available": True, "devices": [], "grating_choices": [], "errors": []}
+        try:
+            devices = self.experiment.ExperimentDevices
+        except Exception as error:
+            result["available"] = False
+            result["errors"].append(f"ExperimentDevices unavailable: {error}")
+            devices = []
+        try:
+            for device in devices:
+                result["devices"].append({
+                    "type": self._device_value(device, "Type", "DeviceType"),
+                    "model": self._device_value(device, "Model"),
+                    "serial_number": self._device_value(device, "SerialNumber"),
+                })
+        except Exception as error:
+            result["errors"].append(f"could not enumerate LightField devices: {error}")
+        result["devices"].sort(key=lambda device: tuple(device.get(key) or "" for key in ("type", "model", "serial_number")))
+        try:
+            choices = self.experiment.GetCurrentCapabilities(self.api["SpectrometerSettings"].Grating)
+            result["grating_choices"] = [str(choice) for choice in choices]
+        except Exception as error:
+            result["errors"].append(f"grating capability query unavailable: {error}")
+        return result
 
     @staticmethod
     def _same_settings(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
@@ -521,6 +560,60 @@ class LegacyThorlabsPowerMeter:
         self.meter = None
         self.resource: str | None = None
         self.wavelength_nm: float | None = None
+        self.hardware: dict[str, Any] = {"available": False, "errors": ["power meter is not connected"]}
+
+    @staticmethod
+    def _optional_text(value: Any) -> str | None:
+        return str(value).strip() if value is not None and str(value).strip() else None
+
+    def _hardware_inventory(self, meter: Any) -> dict[str, Any]:
+        """Read helper-provided meter/sensor identity without treating it as settings."""
+        result: dict[str, Any] = {
+            "available": True, "resource": self.resource,
+            "model": self._optional_text(getattr(meter, "modelName", None)),
+            "serial_number": self._optional_text(getattr(meter, "serialNumber", None)),
+            "manufacturer": self._optional_text(getattr(meter, "manufacturer", None)),
+            "driver_version": self._optional_text(getattr(type(meter), "driverVersion", None)),
+            "wavelength_range_nm": {"min": None, "max": None},
+            "sensor": {"available": False}, "errors": [],
+        }
+        try:
+            # The original helper appends decoded flags each time this method
+            # runs. Clear its display cache so a sensor hot-swap readback is
+            # an identity, rather than a growing history of prior sensors.
+            for name in ("sensorName", "sensorSerialNumber", "sensorCalibrationMessage", "sensorType", "sensorSubType", "sensorFlags"):
+                if hasattr(meter, name):
+                    setattr(meter, name, "" if name == "sensorFlags" else None)
+            with redirect_stdout(sys.stderr):
+                meter.getSensorInfo()
+            sensor_type = self._optional_text(getattr(meter, "sensorType", None))
+            sensor_name = self._optional_text(getattr(meter, "sensorName", None))
+            no_sensor = sensor_type == "No sensor" or sensor_name in (None, "No sensor")
+            result["sensor"] = {
+                "available": not no_sensor,
+                "name": None if no_sensor else sensor_name,
+                "serial_number": None if no_sensor else self._optional_text(getattr(meter, "sensorSerialNumber", None)),
+                "type": sensor_type,
+                "subtype": self._optional_text(getattr(meter, "sensorSubType", None)),
+                "calibration": None if no_sensor else self._optional_text(getattr(meter, "sensorCalibrationMessage", None)),
+                "flags": self._optional_text(getattr(meter, "sensorFlags", None)),
+            }
+        except Exception as error:
+            result["errors"].append(f"sensor inventory unavailable: {error}")
+        for key, selector in (("min", 1), ("max", 2)):
+            try:
+                # Refresh limits from the current sensor, not the helper cache
+                # left by a prior setWaveLength or a different sensor head.
+                status, value = meter.deviceNET.getWavelength(selector)
+                if int(status) < 0:
+                    raise BridgeError(f"SDK status {status}")
+                value = float(value)
+                if not math.isfinite(value) or value <= 0:
+                    raise BridgeError("non-positive or non-finite wavelength limit")
+                result["wavelength_range_nm"][key] = value
+            except Exception as error:
+                result["errors"].append(f"sensor wavelength {key} unavailable: {error}")
+        return result
 
     @staticmethod
     def _read_actual_wavelength(meter: Any) -> float:
@@ -617,6 +710,7 @@ class LegacyThorlabsPowerMeter:
             self._disconnect_local_meter(meter)
             raise BridgeError(f"Thorlabs power meter setup failed: {error}") from error
         self.meter, self.resource, self.wavelength_nm = meter, resource, actual_wavelength
+        self.hardware = self._hardware_inventory(meter)
         return self.state()
 
     @staticmethod
@@ -669,12 +763,19 @@ class LegacyThorlabsPowerMeter:
         except Exception as error:
             raise BridgeError(f"power meter read failed: {error}") from error
         self.wavelength_nm = wavelength_nm
+        # A sensor can be hot-swapped while the console remains connected.
+        # Refresh identity for the point metadata without making a failed
+        # optional inventory query reject an otherwise valid power sample.
+        self.hardware = self._hardware_inventory(self.meter)
+        if self.hardware["sensor"].get("type") == "No sensor":
+            raise BridgeError("power meter reports no sensor head attached")
         return {
             "power_w": power_w,
             "wavelength_nm": wavelength_nm,
             "native_unit": native_unit,
             "native_value": native_value,
             "unit": "W",
+            "hardware": self.hardware,
         }
 
     def disconnect(self) -> None:
@@ -684,10 +785,11 @@ class LegacyThorlabsPowerMeter:
                     self.meter.disconnect()
             finally:
                 self.meter, self.resource, self.wavelength_nm = None, None, None
+                self.hardware = {"available": False, "errors": ["power meter is not connected"]}
 
     def state(self) -> dict[str, Any]:
         return {"connected": self.meter is not None, "resource": self.resource,
-                "wavelength_nm": self.wavelength_nm}
+                "wavelength_nm": self.wavelength_nm, "hardware": self.hardware}
 
 
 @dataclass

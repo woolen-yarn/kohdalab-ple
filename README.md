@@ -11,6 +11,7 @@ LightField・リモートCONEX CC・パワーメーターを組み合わせた�
 
 - BG → first PL → peak/integration selection → scan. / BG取得・最初のPL確認・解析区間選択・走査の順に進行。
 - Live device traces, spectra, overlays, wavelength calibration and Inferno heatmap. / 機器ライブ表示・スペクトル・代表曲線・波長回帰・ヒートマップ。
+- Automatically record connected camera, grating and power-sensor information exposed by the SDK. / SDKが返すカメラ・グレーティング・パワーセンサーの情報を自動取得・記録。
 - Rust measurement/analysis/storage engine, with an optional Python/Jupyter GUI client. / 測定・解析・保存はRust、Python/Jupyterからの外部操作にも対応。
 
 ## Interface / 画面

@@ -36,6 +36,7 @@ pub enum Event {
     AnalysisAccepted(Box<Config>),
     SpectrometerSettings(serde_json::Value),
     PowerWavelength(f64),
+    PowerHardware(serde_json::Value),
     SpectrometerConfigured(Result<serde_json::Value, String>),
     Cleanup {
         confirmed: bool,
@@ -499,6 +500,7 @@ fn execute(
 ) -> Result<(), String> {
     spec.configure(c)?;
     let _ = events.send(Event::SpectrometerSettings(spec.settings()));
+    recording.hardware(json!({"spectrometer":spec.settings(),"power":power.hardware()?,"mode":c.mode,"source":if c.mode == ple_core::Mode::Hardware {"connected_device_readback"} else {"simulated"}}))?;
     spec.prepare_shutter(c)?;
     let result = execute_inner(
         c, plan, spec, stage, power, stop, commands, events, recording,
@@ -712,7 +714,7 @@ fn acquire_point(
     bg: &Spectrum,
 ) -> Result<Acquisition, String> {
     check_stop(stop)?;
-    let (power_w, power_time, sensor_wavelength) =
+    let (power_w, power_time, sensor_wavelength, power_hardware) =
         if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration {
             let predicted = ple_core::interpolate_excitation(&plan.excitation_anchors, actual)?;
             power.read_at(predicted)?
@@ -731,7 +733,7 @@ fn acquire_point(
         index + 1,
         repeat + 1
     )));
-    recording.event("acquisition_started",json!({"file_base":file_base,"point_index":index,"repeat_index":repeat,"power_w":power_w,"power_timestamp_unix_s":power_time}))?;
+    recording.event("acquisition_started",json!({"file_base":file_base,"point_index":index,"repeat_index":repeat,"power_w":power_w,"power_timestamp_unix_s":power_time,"power_hardware":power_hardware}))?;
     let spectrum = spec.acquire(&recording.base_path(&file_base), false, actual)?;
     let mut acquired = Acquisition {
         file_base,
@@ -749,7 +751,7 @@ fn acquire_point(
         corrected_counts: Vec::new(),
     };
     recording.acquired(&acquired)?;
-    if acquired.spectrum.settings != bg.settings {
+    if !matching_acquisition_settings(&acquired.spectrum.settings, &bg.settings) {
         return Err("LightField settings changed after BG; raw acquisition retained".into());
     }
     acquired.corrected_counts = subtract_background(&acquired.spectrum, bg)?;
@@ -763,9 +765,85 @@ fn acquire_point(
     Ok(acquired)
 }
 
+fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    if let (Some(old), Some(new)) = (
+        a.pointer("/hardware/lightfield/devices")
+            .and_then(|v| v.as_array()),
+        b.pointer("/hardware/lightfield/devices")
+            .and_then(|v| v.as_array()),
+    ) {
+        // The SDK may reorder devices or add previously unavailable fields.
+        // Compare known identities only when the device type is unambiguous.
+        for original in old {
+            let Some(kind) = original["type"].as_str().filter(|s| !s.is_empty()) else {
+                continue;
+            };
+            if old
+                .iter()
+                .filter(|v| v["type"].as_str() == Some(kind))
+                .count()
+                != 1
+            {
+                continue;
+            }
+            let candidates: Vec<_> = new
+                .iter()
+                .filter(|v| v["type"].as_str() == Some(kind))
+                .collect();
+            if candidates.len() != 1 {
+                continue;
+            }
+            for field in ["model", "serial_number"] {
+                if let (Some(left), Some(right)) = (
+                    original[field].as_str().filter(|s| !s.is_empty()),
+                    candidates[0][field].as_str().filter(|s| !s.is_empty()),
+                ) && left != right
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    let strip = |v: &serde_json::Value| {
+        let mut v = v.clone();
+        if let Some(object) = v.as_object_mut() {
+            object.remove("hardware");
+        }
+        v
+    };
+    strip(a) == strip(b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn optional_inventory_does_not_hide_changed_settings_or_camera() {
+        let base = json!({"exposure_ms":10.,"grating":"g","hardware":{"lightfield":{"devices":[{"type":"Camera","model":"A","serial_number":"1"}]}}});
+        let mut current = base.clone();
+        current["hardware"]["lightfield"]["errors"] = json!(["optional metadata unavailable"]);
+        assert!(matching_acquisition_settings(&base, &current));
+        current["hardware"]["lightfield"]["devices"][0]["serial_number"] = serde_json::Value::Null;
+        assert!(matching_acquisition_settings(&base, &current));
+        assert!(matching_acquisition_settings(&current, &base));
+        current = base.clone();
+        current["hardware"]["lightfield"]["devices"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"type":"Spectrometer","model":"HRS-300","serial_number":"S1"}));
+        let mut reordered = current.clone();
+        reordered["hardware"]["lightfield"]["devices"]
+            .as_array_mut()
+            .unwrap()
+            .reverse();
+        assert!(matching_acquisition_settings(&current, &reordered));
+        current = base.clone();
+        current["hardware"]["lightfield"]["devices"][0]["serial_number"] = json!("2");
+        assert!(!matching_acquisition_settings(&base, &current));
+        current = base.clone();
+        current["exposure_ms"] = json!(20.);
+        assert!(!matching_acquisition_settings(&base, &current));
+    }
     #[test]
     fn failed_spectrometer_connect_retains_stop_owner_until_verified_recovery() {
         let dir = tempfile::tempdir().unwrap();
@@ -1001,6 +1079,21 @@ mod tests {
         assert!(path.join("analysis.json").exists());
         assert!(path.join("accepted_settings.json").exists());
         assert!(path.join("settings.json").exists());
+        let inventory: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("hardware.json")).unwrap()).unwrap();
+        assert_eq!(inventory["hardware"]["source"], "simulated");
+        let events = std::fs::read_to_string(path.join("events.jsonl")).unwrap();
+        let readings: Vec<serde_json::Value> = events
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .filter(|v: &serde_json::Value| v["kind"] == "acquisition_started")
+            .collect();
+        assert_eq!(readings.len(), planned);
+        assert!(
+            readings
+                .iter()
+                .all(|v| v["data"]["power_hardware"]["source"] == "simulated")
+        );
         assert!(!path.join("raw/background.spe").exists());
     }
     #[test]

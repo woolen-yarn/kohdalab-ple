@@ -29,6 +29,8 @@ Implemented support is distinct from physical qualification. For device/firmware
 | CONEX X default port / X既定ポート | COM3 on the controller PC / 制御PC側 |
 | CONEX Y default port / Y既定ポート | COM4 on the controller PC / 制御PC側 |
 
+SDK-reported device identities and grating choices are read automatically and saved separately in `hardware.json` and acquisition records. `apparatus` fields remain manual declarations; see [automatic inventory](laboratory-apparatus.md#接続時の自動取得と記録).
+
 The `apparatus` profile section records this setup and is saved with the run's settings JSON. It describes models and port defaults; it does not select a driver, identify an attached meter, or start laser control. The authoritative active port is `stage.com_port`, which remains COM4 (Y) by default. The current PLE runner controls one selected stage; X is reserved as setup information and is not moved automatically.
 
 `apparatus`は設定JSONと測定時の設定記録へ保存します。型番・ポートの既定値を記録する項目で、ドライバー選択・接続機種の識別・レーザー制御は行いません。実際の接続先は`stage.com_port`で、現在の既定はYのCOM4です。現行PLEは選択した1軸を制御し、Xの情報は保持しますが自動で動かしません。既存の波長校正点はDemo用の例であり、3900Sの実測校正としては扱いません。

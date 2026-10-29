@@ -134,6 +134,13 @@ impl Recording {
             .and_then(|_| self.events.flush())
             .map_err(|e| e.to_string())
     }
+    pub fn hardware(&mut self, hardware: Value) -> Result<(), String> {
+        atomic_json(
+            &self.directory.join("hardware.json"),
+            &json!({"schema_version":1,"captured_unix_s":unix_s(),"hardware":hardware}),
+        )?;
+        self.event("hardware_recorded", hardware)
+    }
     pub fn background(&mut self, b: &Spectrum) -> Result<(), String> {
         b.validate()?;
         write_raw_csv(&self.directory.join("raw/background.csv"), b)?;
