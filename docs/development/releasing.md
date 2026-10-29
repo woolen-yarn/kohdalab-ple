@@ -10,6 +10,8 @@ TRKR同様、ルートCargoを唯一のソースとし、`scripts/build_release.
 
 ## Local package / ローカル配布物
 
+Build scripts require Python 3.11 or later; this does not change the packaged Demo runtime requirements. / ビルドスクリプトにはPython 3.11以降を使います。配布済みDemoの実行条件は変わりません。
+
 Run the platform command on its intended build OS, with Cargo dependencies and the corresponding Rust target installed. The staging helpers collect locked dependency licenses offline after a successful build. Use a fresh output directory: the archive writer refuses to overwrite an existing ZIP.
 
 対応するビルドOSで実行し、Cargo依存物とRust targetを事前に用意します。staging helperはビルド後に固定依存物のライセンスをオフライン収集します。既存ZIPは上書きしないため、新しい出力先を使ってください。
@@ -40,3 +42,5 @@ stageが既にある場合は`--no-build`、必要なら`--portable-dir`・`--ma
 ZIP member ordering and timestamps are fixed (`SOURCE_DATE_EPOCH`, default 1980-01-01). This makes archives reproducible for identical staged files in the same compression environment; it does not claim byte-identical native builds across compilers or machines. Keep checksums, commit/tag, SDK versions and qualification records together.
 
 ZIPの順序と時刻は固定します（`SOURCE_DATE_EPOCH`、既定1980-01-01）。同じstage・圧縮環境での再現性を対象とし、異なるcompilerやPCでネイティブ実行ファイルが完全一致することは主張しません。チェックサム・コミット／タグ・SDK版・実機確認を一緒に保持してください。
+
+macOS bundle versions are derived from the workspace manifest. Both platform staging helpers assemble fresh directories and preserve the previous package until the new one is complete. / Macのbundle版番号はworkspaceから取得します。両OSのstageは新規フォルダーで作り、完成まで前版を保持します。
