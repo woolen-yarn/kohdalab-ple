@@ -280,14 +280,13 @@ impl PleApp {
                         "Disconnect every device before changing a profile",
                     ));
                 }
-                let c: Config = serde_json::from_value(
+                let c = parse_profile(
                     body.get("config")
                         .or_else(|| body.get("profile"))
                         .cloned()
                         .ok_or_else(|| Error::new("validation", "config is required"))?,
                 )
-                .map_err(|e| Error::new("validation", e.to_string()))?;
-                c.plan().map_err(|e| Error::new("validation", e))?;
+                .map_err(|e| Error::new("validation", e))?;
                 self.analysis_draft = c.initial_analysis();
                 self.config = c;
                 self.preview = None;
@@ -710,6 +709,23 @@ mod tests {
                 .unwrap()
                 .to_owned();
         (app, ctx, dir, lease)
+    }
+    #[test]
+    fn configure_accepts_saved_ple_profile_and_rejects_foreign_identity() {
+        let (mut app, _ctx, dir, lease) = setup();
+        let path = dir.path().join("config.json");
+        let mut config = app.config.clone();
+        config.sample = "saved_ple_profile".into();
+        save_profile(&path, &config).unwrap();
+        let mut profile: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let body = json!({"action":"configure", "lease":lease, "request_id":crate::remote_gui::new_id().unwrap(), "config":profile});
+        assert_eq!(call(&mut app, body.clone()).unwrap()["configured"], true);
+        assert_eq!(call(&mut app, body).unwrap()["configured"], true);
+        assert_eq!(app.config.sample, "saved_ple_profile");
+        profile["application"] = json!("kohdalab-iv");
+        let error = call(&mut app, json!({"action":"configure", "lease":lease, "request_id":crate::remote_gui::new_id().unwrap(), "config":profile})).unwrap_err();
+        assert_eq!(error.code, "validation");
+        assert_eq!(app.config.sample, "saved_ple_profile");
     }
     #[test]
     fn background_api_validates_idle_ownership_and_idempotency() {

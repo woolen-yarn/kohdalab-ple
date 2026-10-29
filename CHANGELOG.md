@@ -4,6 +4,7 @@
 
 ## 0.3.4 — 2026-10-29
 
+- Accept the application identity marker of saved PLE profiles through the external configure API, while rejecting foreign application profiles.
 - Restrict Mac executable discovery to non-Windows hosts so Windows installed-application discovery works independently of a home-directory lookup.
 
 ## 0.3.3 — 2026-10-29 (source preparation; no published assets)

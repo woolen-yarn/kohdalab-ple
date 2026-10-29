@@ -485,7 +485,13 @@ fn default_config_path() -> PathBuf {
 }
 fn read_profile(path: &std::path::Path) -> Result<Config, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if value.get("scan").is_none() || value.get("spectrometer").is_none() {
+        return Err("Not a PLE configuration: scan and spectrometer are required".into());
+    }
+    parse_profile(value)
+}
+fn parse_profile(mut value: serde_json::Value) -> Result<Config, String> {
     let object = value
         .as_object_mut()
         .ok_or("Configuration must be a JSON object")?;
@@ -493,9 +499,6 @@ fn read_profile(path: &std::path::Path) -> Result<Config, String> {
         && application.as_str() != Some("kohdalab-ple")
     {
         return Err("This configuration belongs to another application".into());
-    }
-    if !object.contains_key("scan") || !object.contains_key("spectrometer") {
-        return Err("Not a PLE configuration: scan and spectrometer are required".into());
     }
     let config: Config = serde_json::from_value(value).map_err(|e| e.to_string())?;
     config.plan()?;
