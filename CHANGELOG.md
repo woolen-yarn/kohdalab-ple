@@ -2,7 +2,11 @@
 
 ## Unreleased / 未リリース
 
-## 0.3.3 — 2026-10-29
+## 0.3.4 — 2026-10-29
+
+- Restrict Mac executable discovery to non-Windows hosts so Windows installed-application discovery works independently of a home-directory lookup.
+
+## 0.3.3 — 2026-10-29 (source preparation; no published assets)
 
 - Add NSIS Setup.exe with suite-standard Program Files installation, PLE/shutter shortcuts and an uninstaller; keep portable ZIP. Verify actual install, update, locked binaries, user-data preservation and uninstall on Windows.
 - Separate the default profile into `~/.kohdalab/ple/config.json` and results into `~/.kohdalab/ple/results`. Refuse foreign/damaged profiles on load/save and discover the installed executable from the Python client.

@@ -307,8 +307,9 @@ def find_binary(executable: str | Path | None = None) -> Path:
     roots = [Path.cwd(), Path(__file__).resolve().parents[3]]
     for root in roots:
         candidates.extend(root / name for name in ("kohdalab-ple.exe", "kohdalab-ple", "target/release/kohdalab-ple.exe", "target/release/kohdalab-ple", "dist/kohdalab-ple-windows/kohdalab-ple.exe", "dist/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
-    candidates.extend(Path.home() / folder / "KohdaLab PLE.app/Contents/MacOS/kohdalab-ple" for folder in ("Applications",))
-    candidates.append(Path("/Applications/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
+    if os.name != "nt":
+        candidates.extend(Path.home() / folder / "KohdaLab PLE.app/Contents/MacOS/kohdalab-ple" for folder in ("Applications",))
+        candidates.append(Path("/Applications/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
     for candidate in candidates:
         if candidate.is_file(): return candidate.resolve()
     raise GuiPLEError("No PLE executable found; pass executable= or set KOHDALAB_PLE_EXE", "discovery")
