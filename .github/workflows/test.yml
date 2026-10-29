@@ -35,6 +35,8 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # TRKR pin
         with:
           python-version: '3.12'
+      - name: Verify immutable upstream license bytes before building
+        run: python -m unittest tests.test_collect_licenses -v
       - name: Check documentation links
         run: python scripts/check_docs.py
       - name: Check Rust formatting

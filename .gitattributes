@@ -6,3 +6,5 @@
 *.md text eol=lf
 *.yml text eol=lf
 *.png binary
+# Upstream license/provenance hashes refer to exact bytes on every platform.
+third_party/** -text

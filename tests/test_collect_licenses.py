@@ -13,6 +13,14 @@ SPEC.loader.exec_module(collector)
 
 
 class CollectLicensesTests(unittest.TestCase):
+    def test_repository_upstream_license_bytes_match_pinned_provenance(self) -> None:
+        import hashlib
+        root = ROOT / "third_party" / "rust-upstream"
+        for entry in json.loads((root / "provenance.json").read_text(encoding="utf-8")):
+            path = root / entry["file"]
+            self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), entry["sha256"],
+                             f"Upstream license bytes changed: {path}; preserve bytes, do not update the recorded hash")
+
     def _metadata(self, workspace: Path, package: dict) -> dict:
         return {"workspace_root": str(workspace), "packages": [package]}
 
