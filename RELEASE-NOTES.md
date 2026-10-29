@@ -1,4 +1,4 @@
-# KohdaLab PLE 0.3.1 — External control and automatic BG
+# KohdaLab PLE 0.3.2 — External control and automatic BG
 
 Control the running PLE GUI with the standard-library Python/Jupyter `GuiClient` and acquire BG through kohdalab-shutter without opening a second Pico connection.
 
@@ -9,7 +9,7 @@ Control the running PLE GUI with the standard-library Python/Jupyter `GuiClient`
 
 ## Downloads
 
-Extract `KohdaLab-PLE-v0.3.1-windows-x64.zip` completely and read `START-HERE.md`. The ZIP includes the client, SDK adapters, configuration examples and verification scripts. Rust is not needed to run it. Windows instruments require separately installed 64-bit Python, LightField and matching manufacturer software/helper. A pinned, compatible kohdalab-shutter Windows GUI/CLI companion is included with corresponding source and license texts. Start `companions/kohdalab-shutter/Start-Shutter.cmd` on the same acquisition PC, then connect the physical Pico before automatic BG.
+Extract `KohdaLab-PLE-v0.3.2-windows-x64.zip` completely and read `START-HERE.md`. The ZIP includes the client, SDK adapters, configuration examples and verification scripts. Rust is not needed to run it. Windows instruments require separately installed 64-bit Python, LightField and matching manufacturer software/helper. A pinned, compatible kohdalab-shutter Windows GUI/CLI companion is included with corresponding source and license texts. Start `companions/kohdalab-shutter/Start-Shutter.cmd` on the same acquisition PC, then connect the physical Pico before automatic BG.
 
 macOS arm64 supports Demo/results. Windows binaries are unsigned; macOS uses ad hoc signing. Download the SHA-256 file with the packages. No physical camera, Pico, servo, optical closure or calibration qualification is claimed. See `VALIDATION.json` and the hardware checklist.
 

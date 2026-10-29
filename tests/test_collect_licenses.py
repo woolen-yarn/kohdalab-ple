@@ -92,6 +92,35 @@ class CollectLicensesTests(unittest.TestCase):
             self.assertFalse(report["ok"])
             self.assertEqual(notice["missing_registry_license_texts"][0]["name"], "empty")
 
+    def test_companion_uses_external_verified_provenance_without_source_changes(self) -> None:
+        import hashlib
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            companion = root / "independent-companion"
+            companion.mkdir()
+            manifest = companion / "Cargo.toml"
+            manifest.write_text("[package]\nname='demo'\n")
+            supplemental = root / "ple-license-provenance"
+            supplemental.mkdir()
+            text = b"immutable upstream license\r\n"
+            (supplemental / "LICENSE-MIT").write_bytes(text)
+            (supplemental / "provenance.json").write_text(json.dumps([{
+                "package": "demo", "version": "1.0.0", "file": "LICENSE-MIT",
+                "sha256": hashlib.sha256(text).hexdigest(),
+            }]))
+            package = {"id": "demo 1.0.0", "name": "demo", "version": "1.0.0",
+                       "source": "registry+https://example", "manifest_path": str(manifest)}
+            report = collector.collect(self._metadata(companion, package), root / "out",
+                                       supplemental_root=supplemental)
+            self.assertTrue(report["ok"])
+            copied = next((root / "out").glob("*/LICENSE-MIT"))
+            self.assertEqual(copied.read_bytes(), text)
+            self.assertEqual(list(companion.iterdir()), [manifest])
+            (supplemental / "LICENSE-MIT").write_bytes(b"changed")
+            with self.assertRaisesRegex(RuntimeError, "hash mismatch"):
+                collector.collect(self._metadata(companion, package), root / "bad-out",
+                                  supplemental_root=supplemental)
+
 
 if __name__ == "__main__":
     unittest.main()

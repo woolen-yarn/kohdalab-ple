@@ -18,7 +18,7 @@ try {
     Copy-Item target/release/kohdalab-shutter-gui.exe,target/release/kohdalab-shutter.exe,LICENSE -Destination $destinationPath
     git archive --format=zip --output (Join-Path $destinationPath "source.zip") HEAD
     if ($LASTEXITCODE -ne 0) { throw "Shutter source archive failed" }
-    python (Join-Path $projectRoot "scripts/collect_licenses.py") --target x86_64-pc-windows-msvc --output (Join-Path $destinationPath "third_party/rust")
+    python (Join-Path $projectRoot "scripts/collect_licenses.py") --target x86_64-pc-windows-msvc --supplemental-root (Join-Path $projectRoot "third_party/rust-upstream") --output (Join-Path $destinationPath "third_party/rust")
     if ($LASTEXITCODE -ne 0) { throw "Shutter dependency licenses failed" }
     & (Join-Path $projectRoot "scripts/inspect-windows-binary.ps1") -Directory $destinationPath -ExecutableName kohdalab-shutter-gui.exe -OutputPrefix shutter-gui -SkipVersionQuery
     & (Join-Path $projectRoot "scripts/inspect-windows-binary.ps1") -Directory $destinationPath -ExecutableName kohdalab-shutter.exe -OutputPrefix shutter-cli -SkipVersionQuery

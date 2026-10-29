@@ -94,7 +94,7 @@ def _copy_candidate(source: Path, source_root: Path, destination_root: Path) -> 
     return relative.as_posix()
 
 
-def collect(metadata: dict[str, Any], output: Path) -> dict[str, Any]:
+def collect(metadata: dict[str, Any], output: Path, *, supplemental_root: Path | None = None) -> dict[str, Any]:
     """Collect text files and return a JSON-safe report.  ``output`` must not exist."""
     if output.exists():
         raise RuntimeError(f"refusing to overwrite existing output directory: {output}")
@@ -103,6 +103,7 @@ def collect(metadata: dict[str, Any], output: Path) -> dict[str, Any]:
     if not isinstance(packages, list) or not isinstance(workspace_root_text, str):
         raise RuntimeError("metadata needs packages[] and workspace_root")
     workspace_root = Path(workspace_root_text)
+    supplemental_root = supplemental_root or workspace_root / "third_party" / "rust-upstream"
     output.mkdir(parents=True)
     package_reports: list[dict[str, Any]] = []
     missing_registry: list[dict[str, Any]] = []
@@ -118,7 +119,6 @@ def collect(metadata: dict[str, Any], output: Path) -> dict[str, Any]:
         suffix = hashlib.sha256(package_id.encode("utf-8")).hexdigest()[:12]
         package_root = output / f"{_safe_component(name)}-{_safe_component(version)}-{suffix}"
         candidates, problems = _license_candidates(package, workspace_root)
-        supplemental_root = workspace_root / "third_party" / "rust-upstream"
         provenance_file = supplemental_root / "provenance.json"
         if not candidates and provenance_file.is_file():
             for entry in json.loads(provenance_file.read_text(encoding="utf-8")):
@@ -135,6 +135,8 @@ def collect(metadata: dict[str, Any], output: Path) -> dict[str, Any]:
             # A workspace fallback lives outside a member manifest, but is
             # copied from workspace root with an explicit stable prefix.
             root = workspace_root if _inside(candidate, source_root) is None else source_root
+            if _inside(candidate, supplemental_root) is not None:
+                root = supplemental_root
             relative = _copy_candidate(candidate, root, package_root)
             if relative is None:
                 problems.append(f"candidate escapes source root: {candidate}")
@@ -166,12 +168,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", default="x86_64-pc-windows-gnu", help="Cargo target platform")
     parser.add_argument("--cargo", default="cargo", help="explicit cargo executable")
     parser.add_argument("--metadata", type=Path, help="saved cargo metadata JSON; avoids running cargo")
+    parser.add_argument("--supplemental-root", type=Path, help="explicit verified license provenance directory for an independent companion")
     args = parser.parse_args(argv)
     try:
         metadata = json.loads(args.metadata.read_text(encoding="utf-8")) if args.metadata else _metadata_from_cargo(args.cargo, args.target)
         if not isinstance(metadata, dict):
             raise RuntimeError("metadata JSON root is not an object")
-        report = collect(metadata, args.output)
+        report = collect(metadata, args.output, supplemental_root=args.supplemental_root)
     except (OSError, RuntimeError, json.JSONDecodeError) as error:
         print(f"collect_licenses: {error}", file=sys.stderr)
         return 2

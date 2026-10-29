@@ -2,7 +2,11 @@
 
 ## Unreleased / 未リリース
 
-## 0.3.1 — 2026-10-29
+## 0.3.2 — 2026-10-29
+
+- Collect the companion’s omitted dependency license texts from the existing package/version/hash-verified PLE provenance without modifying shutter source. Validate the actual Windows dependency graph before release.
+
+## 0.3.1 — 2026-10-29 (packaging retry cancelled before publication)
 
 - Exclude the independently pinned shutter source checkout from the PLE Cargo workspace so the Windows companion builds without modifying upstream source. v0.3.0 packaging failed before publication.
 
