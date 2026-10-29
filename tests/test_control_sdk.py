@@ -25,6 +25,9 @@ class ControlSocket(unittest.TestCase):
                 listener.settimeout(0.2)
                 try: peer, _ = listener.accept()
                 except TimeoutError: continue
+                except OSError:
+                    if stop.is_set(): break
+                    raise
                 with peer:
                     body = json.loads(peer.makefile("rb").readline()); method = body["method"]
                     if method == "control.describe": result = {"control_protocol": 1, "application": "kohdalab-ple", "methods": ["control.describe", "control.status", "control.acquire", "control.start", "control.result", "control.release"]}

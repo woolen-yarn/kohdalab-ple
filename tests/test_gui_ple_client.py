@@ -96,7 +96,7 @@ class GuiPLETests(unittest.TestCase):
             for directory, name in ((root / "control", "ple-gui-control.json"), (root / "run", "ple-gui-legacy.json")):
                 directory.mkdir(parents=True)
                 (directory / name).write_text(json.dumps({"app":"kohdalab-ple","api_version":1,"host":"127.0.0.1","port":self.server.port,"token":"secret","pid":1,"instance_id":"same"}))
-            with patch.dict(os.environ, {"HOME": home}, clear=False):
+            with patch.dict(os.environ, {"HOME": home, "USERPROFILE": home}, clear=False):
                 client = GuiPLE()
                 self.assertEqual(client.endpoint["app"], "kohdalab-ple")
 
