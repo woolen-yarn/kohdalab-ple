@@ -1,7 +1,8 @@
 # KohdaLab PLE control API
 
-PLE exposes an opt-in, loopback-only JSON-lines control endpoint when launched
-with its GUI API option. The descriptor is published atomically in
+PLE publishes a token-authenticated, loopback-only JSON-lines control endpoint
+during ordinary GUI startup. Use `--no-gui-api` to disable it. Discovery does
+not acquire control or connect hardware. The descriptor is published atomically in
 `~/.kohdalab/control`; it contains a per-instance token and must never be
 shared outside the local user account.
 
