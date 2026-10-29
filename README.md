@@ -1,6 +1,7 @@
 # KohdaLab PLE
 
 [![CI](https://github.com/woolen-yarn/kohdalab-ple/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-ple/actions/workflows/test.yml)
+[![Release](https://img.shields.io/github/v/release/woolen-yarn/kohdalab-ple?include_prereleases)](https://github.com/woolen-yarn/kohdalab-ple/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Rust desktop application for photoluminescence excitation measurements using LightField, remote CONEX CC motion, and power monitoring.
@@ -24,7 +25,7 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| Prerelease / 実機確認用 | [GitHub Releases](https://github.com/woolen-yarn/kohdalab-ple/releases): Windows x64 portable ZIP, macOS Apple silicon app ZIP, source and checksums | [Validation record / 検証記録](docs/validation/README.md) |
+| v0.2.2 preview / 実機確認用 | [Release v0.2.2](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.2): Windows x64 portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
@@ -44,6 +45,8 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 [装置リスト・メーカー仕様と接続準備 / Apparatus and setup](docs/reference/laboratory-apparatus.md)
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
+
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.2.2 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 

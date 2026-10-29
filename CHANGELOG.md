@@ -2,6 +2,10 @@
 
 ## Unreleased / 未リリース
 
+## 0.2.2 — 2026-10-29
+
+- Package automatic apparatus discovery for Windows instrument qualification; add first-run guidance, extracted-package checks, binary dependency inspection and release origin/validation assets. / 自動取得をWindows版へ同梱し、初回案内・ZIP展開後検証・依存関係・配布証跡を追加。
+
 - Automatically discover SDK-exposed camera/grating/meter/sensor information; replace fixed grating presets with reported capabilities and retain per-run and per-point hardware provenance. / 実機情報を自動取得し、グレーティング候補と測定記録へ反映。
 
 - Audit the laboratory apparatus against manufacturer documents, document unknown camera/grating/sensor setup, and add a physical connection sequence. / メーカー仕様との照合・未確定のカメラ等・実機接続手順を追加。

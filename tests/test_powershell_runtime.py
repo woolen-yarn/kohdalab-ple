@@ -81,7 +81,7 @@ class PowerShellRuntimeTests(unittest.TestCase):
                 (root / folder / "fixture.txt").write_text("fixture")
             for name in ("preflight.ps1", "verify_run.py", "verify_gui_api.py", "collect_licenses.py"):
                 (root / "scripts" / name).touch()
-            for name in ("README.md", "LICENSE", "CHANGELOG.md", "CODE_SIGNING_POLICY.md", "CONTRIBUTING.md", "PRIVACY.md", "REDISTRIBUTION.md", "ROADMAP.md", "SAFETY.md", "SECURITY.md"):
+            for name in ("README.md", "START-HERE.md", "RELEASE-NOTES.md", "LICENSE", "CHANGELOG.md", "CODE_SIGNING_POLICY.md", "CONTRIBUTING.md", "PRIVACY.md", "REDISTRIBUTION.md", "ROADMAP.md", "SAFETY.md", "SECURITY.md"):
                 (root / name).write_text("fixture")
             (root / "target" / "release").mkdir(parents=True)
             (root / "target" / "release" / "kohdalab-ple.exe").write_bytes(b"packaging-test-fixture; never executed")

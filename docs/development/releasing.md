@@ -44,3 +44,7 @@ ZIP member ordering and timestamps are fixed (`SOURCE_DATE_EPOCH`, default 1980-
 ZIPの順序と時刻は固定します（`SOURCE_DATE_EPOCH`、既定1980-01-01）。同じstage・圧縮環境での再現性を対象とし、異なるcompilerやPCでネイティブ実行ファイルが完全一致することは主張しません。チェックサム・コミット／タグ・SDK版・実機確認を一緒に保持してください。
 
 macOS bundle versions are derived from the workspace manifest. Both platform staging helpers assemble fresh directories and preserve the previous package until the new one is complete. / Macのbundle版番号はworkspaceから取得します。両OSのstageは新規フォルダーで作り、完成まで前版を保持します。
+
+## Release evidence / 配布証跡
+
+TRKR/IVと同様に、具体的な版のReleaseへZIPとSHA-256をまとめます。Windows版には`START-HERE.md`、`windows-imports.txt`、`windows-metadata.json`を含め、展開したexeの版番号と設定検査をWindowsで実行します。全検証・両OSビルド成功後に、`scripts/release_metadata.py`で各ZIP／Windows exeのハッシュを再照合し、`BUILD-ORIGIN.json`、`VALIDATION.json`、統合`SHA256SUMS.txt`を作成します。結果はソフト検証に限定し、実機検証やネイティブGUI画面の試験と混同しません。

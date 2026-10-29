@@ -20,7 +20,7 @@ try {
     Copy-Item "examples" "$stage/examples" -Recurse
     Copy-Item "docs" "$stage/docs" -Recurse
     Copy-Item "servers" "$stage/servers" -Recurse
-    Copy-Item "README.md", "LICENSE", "CHANGELOG.md", "CODE_SIGNING_POLICY.md", "CONTRIBUTING.md", "PRIVACY.md", "REDISTRIBUTION.md", "ROADMAP.md", "SAFETY.md", "SECURITY.md" -Destination $stage
+    Copy-Item "README.md", "START-HERE.md", "RELEASE-NOTES.md", "LICENSE", "CHANGELOG.md", "CODE_SIGNING_POLICY.md", "CONTRIBUTING.md", "PRIVACY.md", "REDISTRIBUTION.md", "ROADMAP.md", "SAFETY.md", "SECURITY.md" -Destination $stage
     Copy-Item "third_party" "$stage/third_party" -Recurse
     $rustTarget = (rustc -vV | Select-String '^host: ').ToString().Substring(6)
     python scripts/collect_licenses.py --target $rustTarget --output "$stage/third_party/rust"

@@ -43,6 +43,8 @@ SOURCE_PATHS = (
     ".gitignore",
     "LICENSE",
     "README.md",
+    "START-HERE.md",
+    "RELEASE-NOTES.md",
     "CHANGELOG.md",
     "CODE_SIGNING_POLICY.md",
     "CONTRIBUTING.md",
@@ -135,6 +137,10 @@ def run_stage_builder(platform: str) -> None:
             ["powershell", "-ExecutionPolicy", "Bypass", "-File", "scripts/build-windows.ps1"],
             cwd=ROOT,
             check=True,
+        )
+        subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "scripts/inspect-windows-binary.ps1", "-Directory", str(ROOT / "dist" / "kohdalab-ple-windows")],
+            cwd=ROOT, check=True,
         )
     elif platform == "macos-arm64":
         subprocess.run(["sh", "scripts/package-macos.sh"], cwd=ROOT, check=True)

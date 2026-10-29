@@ -1,4 +1,5 @@
 import hashlib
+import json
 import importlib.util
 import os
 import stat
@@ -18,6 +19,30 @@ SPEC.loader.exec_module(release)
 
 
 class ReleasePackagingTests(unittest.TestCase):
+    def test_release_evidence_checks_archive_and_binary_hashes(self):
+        spec = importlib.util.spec_from_file_location("release_metadata", ROOT / "scripts/release_metadata.py")
+        metadata = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(metadata)
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary)
+            binary = b"test-only-binary"
+            for platform in ("source", "windows-x64", "macos-arm64"):
+                archive = output / f"KohdaLab-PLE-v1.2.3-{platform}.zip"
+                with zipfile.ZipFile(archive, "w") as contents:
+                    contents.writestr("package/README.md", "fixture")
+                    if platform == "windows-x64":
+                        contents.writestr("package/kohdalab-ple.exe", binary)
+                        contents.writestr("package/windows-metadata.json", json.dumps({"executable_sha256":hashlib.sha256(binary).hexdigest(),"external_vc_runtime_required":False}))
+                release.write_checksum(output, archive, platform)
+            metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run")
+            validation = json.loads((output / "VALIDATION.json").read_text())
+            self.assertFalse(validation["physical_hardware_tested"])
+            self.assertFalse(validation["native_gui_window_tested"])
+            self.assertEqual(json.loads((output / "BUILD-ORIGIN.json").read_text())["commit"],"fixture-commit")
+            (output / "SHA256SUMS-source.txt").write_text("wrong checksum")
+            with self.assertRaisesRegex(ValueError,"checksum mismatch"):
+                metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run")
+
     def test_tag_must_match_workspace_version(self):
         release.validate_tag("v1.2.3", "1.2.3")
         with self.assertRaisesRegex(ValueError, "does not match"):

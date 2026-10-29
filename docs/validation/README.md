@@ -1,3 +1,11 @@
+# v0.2.2 実機検証用プレビュー — 2026-10-29
+
+自動機器識別を含む版です。[Release v0.2.2](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.2)の`VALIDATION.json`に今回のソフト検証、`BUILD-ORIGIN.json`にソースcommitとZIP／実行ファイルのSHA-256を記録します。WindowsではZIPを展開した実行ファイルの版番号・設定検査を実施し、PE依存関係と静的CRTを確認します。実機SDK接続と実際の機器は現地の[実機確認](../guides/hardware-qualification.md)で検証します。
+
+以下は過去の各時点での検証履歴です。旧JSONと旧件数をv0.2.2の結果として読み替えません。
+
+---
+
 # v0.2.1 追加検証 — 2026-10-29
 
 - Rust：75件成功（desktop 55、core 20）。SDKの失敗／タイムアウトからStop→idle確認への順序、確認失敗時の次操作拒否、失敗接続の制御ハンドル保持、再接続前の旧接続終了を回帰試験に追加。

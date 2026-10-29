@@ -20,7 +20,7 @@ cp bindings/python/pyproject.toml bindings/python/README.md "$ple_app/Contents/R
 cp bindings/python/kohdalab_ple/*.py "$ple_app/Contents/Resources/bindings/python/kohdalab_ple/"
 cp -R docs "$ple_app/Contents/Resources/"
 cp -R servers "$ple_app/Contents/Resources/"
-cp README.md LICENSE CHANGELOG.md CODE_SIGNING_POLICY.md CONTRIBUTING.md PRIVACY.md REDISTRIBUTION.md ROADMAP.md SAFETY.md SECURITY.md "$ple_app/Contents/Resources/"
+cp README.md START-HERE.md RELEASE-NOTES.md LICENSE CHANGELOG.md CODE_SIGNING_POLICY.md CONTRIBUTING.md PRIVACY.md REDISTRIBUTION.md ROADMAP.md SAFETY.md SECURITY.md "$ple_app/Contents/Resources/"
 cp -R third_party "$ple_app/Contents/Resources/"
 python3 scripts/collect_licenses.py --cargo "$ple_cargo" --target aarch64-apple-darwin --output "$ple_app/Contents/Resources/third_party/rust"
 python3 - "$ple_app/Contents/Info.plist" <<'PY'

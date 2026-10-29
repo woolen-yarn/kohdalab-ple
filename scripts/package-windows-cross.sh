@@ -52,7 +52,7 @@ if grep -Eqi '^(libgcc|libwinpthread|libstdc\+\+)' "$out/windows-imports.txt"; t
 fi
 
 cp "$exe" "$out/"
-cp README.md LICENSE CHANGELOG.md CODE_SIGNING_POLICY.md CONTRIBUTING.md PRIVACY.md REDISTRIBUTION.md ROADMAP.md SAFETY.md SECURITY.md "$out/"
+cp README.md START-HERE.md RELEASE-NOTES.md LICENSE CHANGELOG.md CODE_SIGNING_POLICY.md CONTRIBUTING.md PRIVACY.md REDISTRIBUTION.md ROADMAP.md SAFETY.md SECURITY.md "$out/"
 cp -R bridge bindings examples docs servers third_party "$out/"
 mkdir "$out/scripts"
 cp scripts/preflight.ps1 scripts/verify_run.py scripts/verify_gui_api.py scripts/collect_licenses.py "$out/scripts/"
