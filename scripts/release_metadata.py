@@ -7,7 +7,7 @@ from pathlib import Path
 import zipfile
 
 
-def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, require_shutter: bool = False) -> None:
+def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, require_shutter: bool = False, require_installer: bool = False) -> None:
     archives = [directory / f"KohdaLab-PLE-v{version}-{platform}.zip"
                 for platform in ("source", "windows-x64", "macos-arm64")]
     hashes = {}
@@ -22,6 +22,7 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, 
                 raise ValueError(f"corrupt archive: {archive.name}")
         hashes[archive.name] = digest
     companion = None
+    installer = None
     with zipfile.ZipFile(archives[1]) as windows:
         names = windows.namelist()
         metadata_name = next(n for n in names if n.endswith("/windows-metadata.json"))
@@ -49,9 +50,35 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, 
                     raise ValueError("Shutter binary inspection does not match companion")
             for required in ("source.zip", "LICENSE", "Start-Shutter.cmd", "third_party/rust/NOTICE.json", "shutter-gui-imports.txt", "shutter-cli-imports.txt", "shutter-gui-metadata.json", "shutter-cli-metadata.json"):
                 windows.getinfo(prefix + required)
+        if require_installer:
+            setup = directory / f"KohdaLab-PLE-{version}-Setup.exe"
+            setup_hash = hashlib.sha256(setup.read_bytes()).hexdigest()
+            if setup.read_bytes()[:2] != b"MZ":
+                raise ValueError("Windows Setup is not a PE executable")
+            if (directory / "SHA256SUMS-windows-setup.txt").read_text().split() != [setup_hash, setup.name]:
+                raise ValueError("Windows Setup checksum mismatch")
+            installer = json.loads((directory / "windows-installer-metadata.json").read_text())
+            evidence = json.loads((directory / "windows-installer-validation.json").read_text())
+            prefix = metadata_name.rsplit("/", 1)[0] + "/"
+            files = {name[len(prefix):]: hashlib.sha256(windows.read(name)).hexdigest()
+                     for name in names if name.startswith(prefix) and not name.endswith("/")}
+            payload_hash = hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            if (installer.get("version") != version or evidence.get("version") != version
+                    or installer.get("setup_sha256") != setup_hash or evidence.get("setup_sha256") != setup_hash
+                    or installer.get("payload_sha256") != payload_hash or evidence.get("payload_sha256") != payload_hash
+                    or installer.get("application_sha256") != metadata["executable_sha256"]
+                    or installer.get("payload_files") != len(files) or installer.get("per_user") is not False
+                    or evidence.get("result") != "passed"):
+                raise ValueError("Windows Setup evidence/payload does not match the portable package")
+            required_checks = {"fresh_install", "all_payload_hashes", "shortcuts_and_working_directory", "repeat_update",
+                               "user_data_preserved", "locked_app_and_shutter_refused", "uninstall_and_registration_removal",
+                               "unlisted_local_file_preserved_in_backup", "installed_version_and_config", "installed_python_discovery"}
+            if not required_checks.issubset(evidence.get("checks", [])):
+                raise ValueError("Windows Setup lifecycle evidence is incomplete")
     origin = {"schema_version": 1, "version": version, "commit": commit,
               "workflow_url": run_url, "artifacts_sha256": hashes,
-              "windows_executable_sha256": metadata["executable_sha256"], "shutter_companion": companion}
+              "windows_executable_sha256": metadata["executable_sha256"], "shutter_companion": companion,
+              "windows_installer": installer}
     validation = {"schema_version": 1, "version": version, "commit": commit,
                   "workflow_url": run_url, "software_checks": {
                       "rust_tests_fmt_clippy": "passed", "python_tests": "passed",
@@ -60,6 +87,8 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, 
                   "physical_hardware_tested": False, "native_gui_window_tested": False,
                   "vendor_sdk_included": False,
                   "required_next_step": "Follow START-HERE.md and the physical qualification checklist on the instrument PCs."}
+    if require_installer:
+        validation["software_checks"]["windows_setup_install_update_uninstall"] = "passed"
     for name, value in (("BUILD-ORIGIN.json", origin), ("VALIDATION.json", validation)):
         (directory / name).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
     checksums = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
@@ -71,9 +100,10 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--require-shutter", action="store_true")
+    parser.add_argument("--require-installer", action="store_true")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--run-url", required=True)
     args = parser.parse_args()
-    write_metadata(args.directory, args.version, args.commit, args.run_url, require_shutter=args.require_shutter)
+    write_metadata(args.directory, args.version, args.commit, args.run_url, require_shutter=args.require_shutter, require_installer=args.require_installer)

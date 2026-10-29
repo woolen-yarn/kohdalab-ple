@@ -25,7 +25,7 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| v0.3.2 preview / 実機確認用 | [Release v0.3.2](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.2): Windows x64 portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
+| v0.3.3 preview / 実機確認用 | [Release v0.3.3](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.3): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
@@ -47,7 +47,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
-[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.2 release notes / 更新内容](RELEASE-NOTES.md)
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.3 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 
@@ -106,3 +106,9 @@ Root Cargo workspace, `crates/`, focused scripts and documentation categories fo
 Project code is [MIT licensed](LICENSE). Keep dependency notices and license texts. / 独自コードはMITライセンスです。依存物の権利表記・ライセンス本文を保持してください。
 
 [Redistribution / 再配布](REDISTRIBUTION.md) · [Code signing / 署名](CODE_SIGNING_POLICY.md) · [Privacy / プライバシー](PRIVACY.md)
+
+### Application directories
+
+Results: `~/.kohdalab/ple/results`. Settings: `~/.kohdalab/ple/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config.json`).
+Windows Setup: `C:\Program Files\Kohdalab\KohdaLab PLE`.
+macOS: `/Applications/KohdaLab PLE.app`. See [installation](docs/guides/install.md).

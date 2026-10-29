@@ -2,6 +2,12 @@
 
 ## Unreleased / 未リリース
 
+## 0.3.3 — 2026-10-29
+
+- Add NSIS Setup.exe with suite-standard Program Files installation, PLE/shutter shortcuts and an uninstaller; keep portable ZIP. Verify actual install, update, locked binaries, user-data preservation and uninstall on Windows.
+- Separate the default profile into `~/.kohdalab/ple/config.json` and results into `~/.kohdalab/ple/results`. Refuse foreign/damaged profiles on load/save and discover the installed executable from the Python client.
+- Stage complete updates, retain the previous app folder as a backup, and bind Setup evidence to the portable payload hashes.
+
 ## 0.3.2 — 2026-10-29
 
 - Collect the companion’s omitted dependency license texts from the existing package/version/hash-verified PLE provenance without modifying shutter source. Validate the actual Windows dependency graph before release.

@@ -119,13 +119,7 @@ impl PleApp {
             self.message = Some("Disconnect all devices before loading a profile".into());
             return;
         }
-        let result = std::fs::read_to_string(&self.config_path)
-            .map_err(|e| e.to_string())
-            .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| e.to_string()))
-            .and_then(|c| {
-                c.plan()?;
-                Ok(c)
-            });
+        let result = read_profile(std::path::Path::new(&self.config_path));
         match result {
             Ok(c) => {
                 self.analysis_draft = c.initial_analysis();

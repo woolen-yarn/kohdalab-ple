@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Create reproducible KohdaLab PLE release archives.
 
-This script produces portable ZIPs rather than installers or disk images, and
+This script produces portable ZIPs and optional Windows Setup executables, and
 makes no hardware qualification claim. Use ``--no-build`` when a CI job has
 already created the platform stage.
 """
@@ -203,12 +203,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--macos-app", type=Path, help="pre-staged .app bundle")
     parser.add_argument("--tag", help="tag to validate, normally GITHUB_REF_NAME")
     parser.add_argument("--shutter-source", type=Path, help="pinned kohdalab-shutter Git checkout to include in Windows portable")
+    parser.add_argument("--with-installer", action="store_true", help="also compile Windows Setup from the same prepared payload")
+    parser.add_argument("--makensis", type=Path, help="explicit NSIS compiler for Windows Setup")
     parser.add_argument("--no-build", action="store_true", help="do not invoke the platform staging helper")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_arguments()
+    if args.with_installer and args.platform != "windows-x64":
+        raise ValueError("--with-installer requires --platform windows-x64")
     version = project_version()
     environment_tag = os.environ.get("GITHUB_REF_NAME") if os.environ.get("GITHUB_REF_TYPE") == "tag" else None
     validate_tag(args.tag if args.tag is not None else environment_tag, version)
@@ -223,6 +227,16 @@ def main() -> int:
         artifact, checksum = package_platform(
             output, version, args.platform, args.portable_dir, args.macos_app
         )
+        if args.with_installer:
+            stage, _ = platform_source(args.platform, args.portable_dir, args.macos_app)
+            setup = output / f"{PROJECT_NAME}-{version}-Setup.exe"
+            command = [sys.executable, str(ROOT / "scripts/build_windows_installer.py"),
+                       "--payload-dir", str(stage), "--output", str(setup), "--version", version]
+            if args.makensis:
+                command += ["--makensis", str(args.makensis)]
+            subprocess.run(command, check=True, cwd=ROOT)
+            print(setup)
+            print(write_checksum(output, setup, "windows-setup"))
     print(artifact)
     print(checksum)
     return 0

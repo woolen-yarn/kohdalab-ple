@@ -89,6 +89,15 @@ class GuiPLETests(unittest.TestCase):
         self.assertEqual(move["lease"], "lease")
         self.assertEqual(move["request_id"], "00000000-0000-4000-8000-000000000000")
 
+    def test_installed_binary_is_found_without_path_changes(self):
+        from kohdalab_ple import find_binary
+        with tempfile.TemporaryDirectory() as directory:
+            installed = Path(directory) / "Kohdalab/KohdaLab PLE/kohdalab-ple.exe"
+            installed.parent.mkdir(parents=True)
+            installed.touch()
+            with patch.dict("os.environ", {"ProgramFiles": directory}, clear=True), patch("kohdalab_ple.shutil.which", return_value=None):
+                self.assertEqual(find_binary(), installed.resolve())
+
     def test_uncertain_move_requests_stop_without_retry_and_retains_uuid(self):
         client=GuiPLE(self.endpoint);client.lease="lease";seen=[]
         def wire(_endpoint,payload,_timeout):

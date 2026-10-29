@@ -39,6 +39,9 @@ jobs:
         run: python -m unittest tests.test_collect_licenses -v
       - name: Check documentation links
         run: python scripts/check_docs.py
+      - name: Verify Windows Setup lifecycle with a small payload
+        if: runner.os == 'Windows'
+        run: python scripts/verify_windows_installer.py --fixture
       - name: Check Rust formatting
         run: cargo fmt --all -- --check
       - name: Lint Rust workspace

@@ -1,4 +1,8 @@
-# KohdaLab PLE 0.3.2 — External control and automatic BG
+# KohdaLab PLE 0.3.3 — Windows Setup and application directories
+
+Install with `KohdaLab-PLE-0.3.3-Setup.exe`, using the same NSIS installer family as TRKR/IV. Setup installs PLE and the compatible shutter companion into `C:\Program Files\Kohdalab\KohdaLab PLE`, creates Start menu/desktop shortcuts and an uninstaller. It requires administrator approval. Settings and results stay under the current user’s `~/.kohdalab/ple`; updates stage the complete replacement and keep the previous folder as a sibling backup.
+
+Windows CI runs fresh install, repeat/update, locked-process refusal, payload hash checks, installed CLI/config/client discovery and uninstall with operator-data preservation. Portable ZIP remains available. Python and manufacturer SDKs are still separate.
 
 Control the running PLE GUI with the standard-library Python/Jupyter `GuiClient` and acquire BG through kohdalab-shutter without opening a second Pico connection.
 
@@ -9,11 +13,13 @@ Control the running PLE GUI with the standard-library Python/Jupyter `GuiClient`
 
 ## Downloads
 
-Extract `KohdaLab-PLE-v0.3.2-windows-x64.zip` completely and read `START-HERE.md`. The ZIP includes the client, SDK adapters, configuration examples and verification scripts. Rust is not needed to run it. Windows instruments require separately installed 64-bit Python, LightField and matching manufacturer software/helper. A pinned, compatible kohdalab-shutter Windows GUI/CLI companion is included with corresponding source and license texts. Start `companions/kohdalab-shutter/Start-Shutter.cmd` on the same acquisition PC, then connect the physical Pico before automatic BG.
+Extract `KohdaLab-PLE-v0.3.3-windows-x64.zip` completely and read `START-HERE.md`. The ZIP includes the client, SDK adapters, configuration examples and verification scripts. Rust is not needed to run it. Windows instruments require separately installed 64-bit Python, LightField and matching manufacturer software/helper. A pinned, compatible kohdalab-shutter Windows GUI/CLI companion is included with corresponding source and license texts. Start `companions/kohdalab-shutter/Start-Shutter.cmd` on the same acquisition PC, then connect the physical Pico before automatic BG.
 
 macOS arm64 supports Demo/results. Windows binaries are unsigned; macOS uses ad hoc signing. Download the SHA-256 file with the packages. No physical camera, Pico, servo, optical closure or calibration qualification is claimed. See `VALIDATION.json` and the hardware checklist.
 
 ## 日本語
+
+Setup.exeによるインストールに対応しました。アプリはProgram FilesのPLE専用フォルダー、設定は`~/.kohdalab/ple/config.json`、既定の測定結果は`~/.kohdalab/ple/results`です。shutter GUIも同梱し、スタートメニューから起動できます。更新・アンインストールでユーザーデータを削除しません。
 
 通常起動のGUIをPython/Jupyterから操作できるよう整え、kohdalab-shutterによる自動BGを追加しました。Pico接続はshutter GUIが所有し、PLEはRustからローカルAPIへ接続します。Close → 整定待ち → BG → Open → 整定待ち → 初回PLと進み、peak・積分区間を確認して残りを取得します。終了時は閉状態を確認して操作権を解放します。
 

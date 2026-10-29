@@ -1,6 +1,8 @@
-# KohdaLab PLE v0.3.2 — Windows実機検証の入口
+# KohdaLab PLE v0.3.3 — Windows実機検証の入口
 
-ZIP全体を展開し、このファイルと同じフォルダーの`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
+推奨は`KohdaLab-PLE-0.3.3-Setup.exe`です。実行して管理者権限を許可し、インストール後はスタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPを使う場合は全体を展開し、`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
+
+アプリ本体は`C:\Program Files\Kohdalab\KohdaLab PLE`、設定は`%USERPROFILE%\.kohdalab\ple\config.json`、既定の測定結果は同フォルダーの`results`です。ユーザー用の実機設定はこの設定フォルダーへコピーしてください。インストール先のexamplesを直接編集しません。更新時の旧アプリは隣接フォルダーに退避し、設定・測定結果はアンインストール後も残ります。
 
 ## 実機PCへ用意するもの
 
@@ -27,4 +29,4 @@ ZIP全体を展開し、このファイルと同じフォルダーの`kohdalab-p
 
 通常のPLE GUIには同じPCの`GuiClient()`から接続できます。`python -m pip install ./bindings/python`でクライアントを導入します。[外部API](docs/reference/gui-api.md)と[kohdalab-shutter自動BG](docs/reference/shutter.md)を参照してください。
 
-自動BGを使う場合は、同梱の`companions/kohdalab-shutter/Start-Shutter.cmd`でGUIを起動し、Picoを接続してLocal control APIを有効化します。PLEで`examples/ple-shutter-settings.json`を基に実接続先を設定し、Automatic shutter → kohdalab-shutterと物理CHを選びます。GUI/APIが複数の場合だけendpointファイルを明示します。
+自動BGを使う場合は、スタートメニューの **Shutter (automatic BG)**、または同梱の`companions/kohdalab-shutter/Start-Shutter.cmd`でGUIを起動し、Picoを接続してLocal control APIを有効化します。PLEで`examples/ple-shutter-settings.json`を基に実接続先を設定し、Automatic shutter → kohdalab-shutterと物理CHを選びます。GUI/APIが複数の場合だけendpointファイルを明示します。

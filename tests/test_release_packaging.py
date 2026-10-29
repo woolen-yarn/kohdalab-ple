@@ -57,6 +57,26 @@ class ReleasePackagingTests(unittest.TestCase):
             release.write_checksum(output,windows,"windows-x64")
             metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run",require_shutter=True)
             self.assertEqual(json.loads((output/"BUILD-ORIGIN.json").read_text())["shutter_companion"]["protocol"],2)
+            setup = output / "KohdaLab-PLE-1.2.3-Setup.exe"
+            setup.write_bytes(b"MZinstaller fixture")
+            setup_hash = hashlib.sha256(setup.read_bytes()).hexdigest()
+            release.write_checksum(output, setup, "windows-setup")
+            payload_hash = hashlib.sha256(json.dumps({name.removeprefix("package/"): hashlib.sha256(data).hexdigest()
+                                                     for name, data in members.items()}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            evidence = {"version": "1.2.3", "setup_sha256": setup_hash, "payload_sha256": payload_hash,
+                        "result": "passed", "checks": ["fresh_install", "all_payload_hashes", "shortcuts_and_working_directory",
+                        "repeat_update", "user_data_preserved", "locked_app_and_shutter_refused", "uninstall_and_registration_removal",
+                        "unlisted_local_file_preserved_in_backup", "installed_version_and_config", "installed_python_discovery"]}
+            inspection = {"version": "1.2.3", "setup_sha256": setup_hash, "payload_sha256": payload_hash,
+                          "application_sha256": hashlib.sha256(binary).hexdigest(), "payload_files": len(members), "per_user": False}
+            (output / "windows-installer-metadata.json").write_text(json.dumps(inspection))
+            (output / "windows-installer-validation.json").write_text(json.dumps(evidence))
+            metadata.write_metadata(output, "1.2.3", "fixture-commit", "https://example.test/run", require_installer=True)
+            self.assertEqual(json.loads((output/"VALIDATION.json").read_text())["software_checks"]["windows_setup_install_update_uninstall"], "passed")
+            evidence["payload_sha256"] = "wrong-payload"
+            (output / "windows-installer-validation.json").write_text(json.dumps(evidence))
+            with self.assertRaisesRegex(ValueError, "evidence/payload"):
+                metadata.write_metadata(output, "1.2.3", "fixture-commit", "https://example.test/run", require_installer=True)
             (output / "SHA256SUMS-source.txt").write_text("wrong checksum")
             with self.assertRaisesRegex(ValueError,"checksum mismatch"):
                 metadata.write_metadata(output,"1.2.3","fixture-commit","https://example.test/run")

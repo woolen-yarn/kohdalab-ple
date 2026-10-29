@@ -116,13 +116,9 @@ impl PleApp {
         ctx.set_visuals(egui::Visuals::dark());
         precision::configure(ctx);
         let mut config = Config::default();
-        if std::env::current_dir()
-            .ok()
-            .is_some_and(|p| p == std::path::Path::new("/"))
-            && let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        {
-            config.output_dir = std::path::PathBuf::from(home)
-                .join("Documents/KohdaLab/PLE")
+        if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
+            config.output_dir = PathBuf::from(home)
+                .join(".kohdalab/ple/results")
                 .to_string_lossy()
                 .into();
         }
@@ -130,10 +126,7 @@ impl PleApp {
         if let Some(c) = launch.loaded_config.take() {
             config = c;
         } else if let Some(p) = &launch.config {
-            match std::fs::read_to_string(p)
-                .map_err(|e| e.to_string())
-                .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| e.to_string()))
-            {
+            match read_profile(p) {
                 Ok(c) => config = c,
                 Err(e) => message = Some(e),
             }
@@ -145,13 +138,8 @@ impl PleApp {
         }
         let config_path = if let Some(path) = &launch.config {
             path.to_string_lossy().into_owned()
-        } else if std::path::Path::new("examples").is_dir() {
-            "examples/ple-settings.json".into()
         } else {
-            std::path::Path::new(&config.output_dir)
-                .join("ple-settings.json")
-                .to_string_lossy()
-                .into_owned()
+            default_config_path().to_string_lossy().into_owned()
         };
         let analysis_draft = config.initial_analysis();
         let controller = Controller::spawn();
@@ -489,11 +477,52 @@ impl PleApp {
         }
     }
 }
+fn default_config_path() -> PathBuf {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    home.join(".kohdalab").join("ple").join("config.json")
+}
+fn read_profile(path: &std::path::Path) -> Result<Config, String> {
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    let object = value
+        .as_object_mut()
+        .ok_or("Configuration must be a JSON object")?;
+    if let Some(application) = object.remove("application")
+        && application.as_str() != Some("kohdalab-ple")
+    {
+        return Err("This configuration belongs to another application".into());
+    }
+    if !object.contains_key("scan") || !object.contains_key("spectrometer") {
+        return Err("Not a PLE configuration: scan and spectrometer are required".into());
+    }
+    let config: Config = serde_json::from_value(value).map_err(|e| e.to_string())?;
+    config.plan()?;
+    Ok(config)
+}
 fn save_profile(path: &std::path::Path, config: &Config) -> Result<(), String> {
+    if path.try_exists().map_err(|e| e.to_string())? {
+        read_profile(path)?;
+    }
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    recording::atomic_json(path, config)
+    config.plan()?;
+    let mut value = serde_json::to_value(config).map_err(|e| e.to_string())?;
+    value["application"] = serde_json::json!("kohdalab-ple");
+    use std::io::Write;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temporary
+        .write_all(&serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    temporary.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
 }
 impl eframe::App for PleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -617,14 +646,20 @@ fn main() -> eframe::Result {
             }
         }
     }
+    if launch.config.is_none()
+        && !launch.auto_demo
+        && !launch.check_config
+        && launch.screenshot.is_none()
+    {
+        let path = default_config_path();
+        match path.try_exists() {
+            Ok(true) => launch.config = Some(path),
+            Ok(false) => {}
+            Err(error) => return Err(eframe::Error::AppCreation(Box::new(error))),
+        }
+    }
     if let Some(path) = &launch.config {
-        let checked = std::fs::read_to_string(path)
-            .map_err(|e| e.to_string())
-            .and_then(|s| serde_json::from_str::<Config>(&s).map_err(|e| e.to_string()))
-            .and_then(|c| {
-                c.plan()?;
-                Ok(c)
-            });
+        let checked = read_profile(path);
         match checked {
             Ok(c) => launch.loaded_config = Some(c),
             Err(e) => {
@@ -673,4 +708,33 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| Ok(Box::new(PleApp::new(cc, launch)))),
     )
+}
+
+#[cfg(test)]
+mod config_storage_tests {
+    use super::*;
+    #[test]
+    fn native_profile_round_trip_and_foreign_file_protection() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ple/config.json");
+        save_profile(&path, &Config::default()).unwrap();
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["application"], "kohdalab-ple");
+        assert!(read_profile(&path).is_ok());
+        for bytes in [
+            br#"{"application":"kohdalab-iv"}"#.as_slice(),
+            b"{}",
+            b"broken",
+        ] {
+            std::fs::write(&path, bytes).unwrap();
+            assert!(read_profile(&path).is_err());
+            assert!(save_profile(&path, &Config::default()).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        }
+    }
+    #[test]
+    fn default_path_has_no_preview_name() {
+        assert!(default_config_path().ends_with(".kohdalab/ple/config.json"));
+    }
 }

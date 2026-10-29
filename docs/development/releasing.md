@@ -4,9 +4,9 @@
 
 ## Shared conventions / 共通ルール
 
-As in TRKR, the root Cargo workspace is authoritative. `scripts/build_release.py` is the release entry point. Source, Windows x64 and macOS arm64 ZIPs use the workspace version, with per-platform SHA-256 files. Manufacturer DLLs, private profiles, real runs, and build outputs are excluded from the source archive. PLE currently provides portable ZIPs; installers and disk images are not generated.
+As in TRKR, the root Cargo workspace is authoritative. `scripts/build_release.py` is the release entry point. Source, Windows x64 and macOS arm64 ZIPs use the workspace version, with per-platform SHA-256 files. Manufacturer DLLs, private profiles, real runs, and build outputs are excluded from the source archive. Windows additionally provides a versioned NSIS Setup.exe from the same payload; disk images are not generated.
 
-TRKR同様、ルートCargoを唯一のソースとし、`scripts/build_release.py`を配布入口にします。ソース・Windows x64・macOS arm64のZIP名はworkspace版に従い、プラットフォーム別SHA-256を併置します。ソースZIPからメーカーDLL・私有設定・実測・ビルド出力を除きます。現在のPLEはportable ZIPを作り、installer・DMGは生成しません。
+TRKR同様、ルートCargoを唯一のソースとし、`scripts/build_release.py`を配布入口にします。ソース・Windows x64・macOS arm64のZIP名はworkspace版に従い、プラットフォーム別SHA-256を併置します。ソースZIPからメーカーDLL・私有設定・実測・ビルド出力を除きます。Windowsでは同じpayloadから版付きNSIS Setup.exeも作ります。DMGは生成しません。
 
 ## Local package / ローカル配布物
 
@@ -17,7 +17,7 @@ Run the platform command on its intended build OS, with Cargo dependencies and t
 対応するビルドOSで実行し、Cargo依存物とRust targetを事前に用意します。staging helperはビルド後に固定依存物のライセンスをオフライン収集します。既存ZIPは上書きしないため、新しい出力先を使ってください。
 
 ```powershell
-python scripts/build_release.py --platform windows-x64 --output dist/release-windows
+python scripts/build_release.py --platform windows-x64 --with-installer --shutter-source build/shutter-source --output dist/release-windows
 ```
 
 ```sh
@@ -52,3 +52,9 @@ TRKR/IVと同様に、具体的な版のReleaseへZIPとSHA-256をまとめま�
 ## Shutter companion / 同梱シャッターGUI
 
 Windows CI checks out `woolen-yarn/kohdalab-shutter` at `8d22245899c36206622341ed5957919508aac0a1` under `build/shutter-source`. `--shutter-source build/shutter-source` builds its GUI/CLI with the same static-CRT option, checks imports/CLI help, retains matching source/MIT/Cargo licenses, and stages it under `companions/kohdalab-shutter`. Release metadata requires the companion and verifies its revision/protocol/exe hashes before publishing. No upstream files or firmware are modified. Local custom builds without `--shutter-source` use a separately installed compatible shutter GUI.
+
+## Windows Setup
+
+`scripts/build_windows_installer.py` uses the suite-standard NSIS template in `packaging/windows`. The pinned NSIS 3.12 compiler is checksum-verified and kept in `build/tools`, without system installation. The complete inspected stage is installed in `Program Files\Kohdalab\KohdaLab PLE`. Existing application folders are moved to a sibling backup before activation; user configuration/results remain outside Program Files. Uninstall removes only the exact packaged files, without recursive deletion.
+
+Windows CI first exercises the installer shell with a small fixture. After the real native build, `scripts/verify_windows_installer.py` checks every installed payload hash, installed version/configuration/Python discovery, repeat/update, refusal of locked PLE/shutter, shortcuts/registration and removal while retaining user data and previous-folder operator files. These checks run only in disposable GitHub Actions users. `windows-installer-metadata.json` and `windows-installer-validation.json` bind the Setup SHA-256 and payload hash to the portable ZIP; publish refuses mismatches.

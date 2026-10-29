@@ -38,3 +38,7 @@ notice remains in `kohdalab-trkr/LICENSE`.
 ## kohdalab-shutter Windows companion
 
 GitHub Windows releases may include the separately built GUI/CLI of MIT-licensed [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) at commit `8d22245899c36206622341ed5957919508aac0a1` (package 0.4.1, GUI API protocol 2). Its upstream LICENSE, matching source archive and dependency license texts are retained under `companions/kohdalab-shutter`. The PLE executable communicates with this program; it does not incorporate its Rust implementation or flash firmware.
+
+## Windows Setup
+
+The NSIS installer follows TRKR's Setup distribution and IV's suite-standard application directory, staged replacement and data-preservation approach. The NSIS template was adapted from KohdaLab Shutter (MIT, Kohdalab contributors). The compiler is pinned to NSIS 3.12 using the archive hash recorded by IV at commit `5572ee8a1c08c54dc3def5460b2a719cb4e76e52`; the unchanged archive `COPYING` and provenance are retained in `nsis-3.12/`. Setup uses zlib compression. Compiler/build tools are not bundled.

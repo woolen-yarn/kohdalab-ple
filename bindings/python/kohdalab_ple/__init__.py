@@ -301,6 +301,9 @@ def find_binary(executable: str | Path | None = None) -> Path:
     candidates = []
     found = shutil.which("kohdalab-ple")
     if found: candidates.append(Path(found))
+    program_files = os.environ.get("ProgramW6432") or os.environ.get("ProgramFiles")
+    if program_files:
+        candidates.append(Path(program_files) / "Kohdalab/KohdaLab PLE/kohdalab-ple.exe")
     roots = [Path.cwd(), Path(__file__).resolve().parents[3]]
     for root in roots:
         candidates.extend(root / name for name in ("kohdalab-ple.exe", "kohdalab-ple", "target/release/kohdalab-ple.exe", "target/release/kohdalab-ple", "dist/kohdalab-ple-windows/kohdalab-ple.exe", "dist/KohdaLab PLE.app/Contents/MacOS/kohdalab-ple"))
