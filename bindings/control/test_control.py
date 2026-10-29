@@ -164,6 +164,30 @@ class BoundaryTests(unittest.TestCase):
             self.assertEqual(status.call_count, 2)
             self.assertIsNone(client._lease)
 
+    def test_advertised_read_view_never_claims_ownership(self):
+        client = ControlClient(endpoint=self.endpoint())
+        client._description = {"methods": ["control.plan"]}
+        with (
+            patch("kohdalab_control._exchange", return_value={"plan": {}}) as exchange,
+            patch.object(client, "acquire") as acquire,
+        ):
+            self.assertEqual(client.invoke("plan"), {"plan": {}})
+            acquire.assert_not_called()
+            self.assertNotIn("lease", exchange.call_args.args[2])
+            self.assertNotIn("request_id", exchange.call_args.args[2])
+
+    def test_context_does_not_hide_cleanup_failure_behind_another_error(self):
+        client = ControlClient(endpoint=self.endpoint())
+        original = ValueError("Experiment failed")
+        cleanup = ControlError(
+            "Output cleanup was not confirmed", code="cleanup_unconfirmed"
+        )
+        with patch.object(client, "close", side_effect=cleanup):
+            with self.assertRaises(ControlError) as caught:
+                client.__exit__(ValueError, original, None)
+        self.assertIs(caught.exception.__cause__, original)
+        self.assertEqual(caught.exception.code, "cleanup_unconfirmed")
+
     def test_discovery_never_selects_by_recency(self):
         with tempfile.TemporaryDirectory() as tmp:
             paths = []

@@ -185,7 +185,7 @@ impl PleApp {
             "capabilities" => {
                 return Ok(
                     json!({"application":"kohdalab-ple","application_version":env!("CARGO_PKG_VERSION"),"api_version":1,"control_protocol":1,"transport_revision":1,
-                "methods":["control.describe","control.status","control.config","control.acquire","control.heartbeat","control.release","control.result","control.connect","control.disconnect","control.start","control.stop"],
+                "methods":["control.describe","control.status","control.devices","control.config","control.plan","control.output","control.spectrum","control.background","control.preview","control.shutter","control.acquire","control.heartbeat","control.release","control.result","control.configure","control.set_plan","control.set_background","control.set_output","control.apply_spectrometer","control.connect","control.disconnect","control.start","control.move","control.confirm_background","control.confirm_signal","control.select_analysis","control.stop"],
                 "actions":["capabilities","status","devices","config","plan","output","spectrum","background","preview","shutter","acquire","heartbeat","release","configure","set_plan","set_background","set_output","apply_spectrometer","connect","disconnect","start","move","confirm_background","confirm_signal","select_analysis","result","stop"],
                 "history_limit":api::HISTORY_LIMIT,"command_history_limit":api::HISTORY_LIMIT,"lease_timeout_s":10,"headless":false,"arbitrary_device_commands":false,
                 "safety":{"lease_timeout_seconds":10,"heartbeat_seconds":2,"on_disconnect":"stop","on_release":"stop","stop_requires_lease":true,"stop_policy_defaults":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true}},
@@ -907,6 +907,30 @@ mod tests {
         .unwrap();
         assert_eq!(status["phase"], "cleanup_pending");
         assert_eq!(status["cleanup"], "pending");
+    }
+    #[test]
+    fn common_describe_advertises_configuration_and_confirmation_actions() {
+        let (mut app, _ctx, _dir, _lease) = setup();
+        let description = call(
+            &mut app,
+            json!({"action":"control_describe","_control_method":"describe"}),
+        )
+        .unwrap();
+        for method in [
+            "control.configure",
+            "control.set_plan",
+            "control.confirm_background",
+            "control.confirm_signal",
+            "control.select_analysis",
+        ] {
+            assert!(
+                description["methods"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|v| v == method)
+            );
+        }
     }
     #[test]
     fn common_release_during_active_work_releases_after_cleanup() {

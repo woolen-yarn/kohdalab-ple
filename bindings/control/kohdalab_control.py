@@ -17,7 +17,21 @@ from pathlib import Path
 VERSION = 1
 MAX_DESCRIPTOR = 65536
 MAX_RESPONSE = 64 * 1024 * 1024
-READ_ONLY = frozenset(("describe", "status", "config", "result"))
+READ_ONLY = frozenset(
+    (
+        "describe",
+        "status",
+        "config",
+        "result",
+        "plan",
+        "output",
+        "devices",
+        "spectrum",
+        "background",
+        "preview",
+        "shutter",
+    )
+)
 
 
 class ControlError(RuntimeError):
@@ -473,7 +487,8 @@ class ControlClient:
     def __exit__(self, exc_type, exc, tb):
         try:
             self.close()
-        except ControlError:
+        except ControlError as cleanup_error:
             if exc_type is None:
                 raise
+            raise cleanup_error from exc
         return False

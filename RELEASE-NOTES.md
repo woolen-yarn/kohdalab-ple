@@ -16,9 +16,9 @@ Windows x64 Setup/portable ZIP, macOS Apple-silicon Demo/results ZIP, source and
 
 ## Validation and provenance / 検証と出所
 
-Local Rust workspace: 107 passed; strict clippy passed. Actual native Demo GUI completed six rows and 641 spectral bins with ownership, confirmation, idempotency, expiry and cleanup checks. Focused common tests cover failed cleanup, active release and native Stop compatibility.
+Local Rust workspace: 108 passed; strict clippy passed. Actual native Demo GUI completed six rows and 641 spectral bins with ownership, confirmation, idempotency, expiry and cleanup checks. Focused common tests cover failed cleanup, active release and native Stop compatibility.
 
-The common Python SDK has seven device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
+The common Python SDK has nine device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
 
 ## 日本語
 

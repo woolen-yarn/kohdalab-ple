@@ -49,3 +49,6 @@ Read methods and the existing application-specific clients remain available.
 共通窓口はGUIを介して操作し、機器を直接開きません。対応機能と停止・解放時の安全方針は
 `describe()`で確認してください。各アプリ固有の停止動作や測定CSVは変更しません。
 通信失敗時に操作を自動再送せず、Stop応答だけを停止完了とは見なしません。
+
+If experiment code and release cleanup both fail, the cleanup error is raised
+with the original experiment exception retained as its cause.
