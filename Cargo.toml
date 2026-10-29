@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/ple-core", "crates/ple-desktop"]
+members = ["crates/ple-core", "crates/ple-desktop", "crates/kohdalab-control-protocol"]
 exclude = ["build/shutter-source"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 license = "MIT"
 
@@ -12,3 +12,4 @@ license = "MIT"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ple-core = { path = "crates/ple-core" }
+kohdalab-control-protocol = { path = "crates/kohdalab-control-protocol" }

@@ -11,7 +11,7 @@ kohdalab-ple --gui-api --config experiment.json
 python -m pip install ./bindings/python
 ```
 
-`127.0.0.1`の空きポートだけで待ち受け、`~/.kohdalab/run/ple-gui-<pid>-<instance>.json`へ発見用ファイルを作ります。`--api-dir DIRECTORY`で専用フォルダーを指定できます。Unixの発見ファイルは0600です。トークンはファイルにのみ記録し、通常ログに出しません。正常終了時に発見ファイルを除去します。クラッシュ後の古いファイルはクライアントが読取り専用の疎通確認で除外します。
+`127.0.0.1`の空きポートだけで待ち受け、`~/.kohdalab/control/ple-gui-<pid>-<instance>.json`へ発見用ファイルを作ります。`--api-dir DIRECTORY`で専用フォルダーを指定できます。Unixの発見ファイルは0600です。トークンはファイルにのみ記録し、通常ログに出しません。正常終了時に発見ファイルを除去します。クラッシュ後の古いファイルはクライアントがcanonical control/と旧run/を読取り専用の疎通確認で探索・重複排除します。
 
 ```python
 from kohdalab_ple import GuiPLE, GuiClient, find_binary

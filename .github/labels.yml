@@ -1,0 +1,12 @@
+- name: compatibility
+  color: 5319e7
+  description: API, settings or package compatibility / 互換性
+- name: dependencies
+  color: 0366d6
+  description: Dependency maintenance / 依存関係
+- name: maintenance
+  color: cfd3d7
+  description: Internal maintenance / 保守
+- name: skip-changelog
+  color: eeeeee
+  description: Omit from generated release summary / 自動変更概要から除外

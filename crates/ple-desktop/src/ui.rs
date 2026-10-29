@@ -1239,6 +1239,11 @@ impl PleApp {
             .frame(egui::Frame::new().fill(BG))
             .show(ctx, |ui| {
                 let viewport = ui.max_rect();
+                if !self.rails_initialized {
+                    (self.left_collapsed, self.right_collapsed) =
+                        precision::Columns::initial_rails(viewport.width());
+                    self.rails_initialized = true;
+                }
                 let minimum =
                     precision::Columns::minimum_width(self.right_collapsed, self.left_collapsed);
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(

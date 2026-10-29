@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kohdalab-control"
+version = "1.0.0"
+description = "Standard-library client for the KohdaLab Control Protocol"
+requires-python = ">=3.10"
+license = "MIT"
+readme = "README.md"
+authors = [{name = "KohdaLab"}]
+
+[tool.setuptools]
+py-modules = ["kohdalab_control"]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "W", "B", "PIE", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"test_*.py" = ["S101"]

@@ -1,0 +1,23 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+  categories:
+    - title: User-facing changes
+      labels:
+        - enhancement
+    - title: Bug fixes
+      labels:
+        - bug
+    - title: Safety and compatibility
+      labels:
+        - safety
+        - compatibility
+    - title: Documentation and maintenance
+      labels:
+        - documentation
+        - dependencies
+        - maintenance
+    - title: Other changes
+      labels:
+        - '*'

@@ -21,6 +21,7 @@
 - [Laboratory apparatus and setup / 装置リスト・接続準備](reference/laboratory-apparatus.md)
 - [Hardware and official downloads / 対応機器・公式入手先](reference/hardware.md)
 - [GUI API](reference/gui-api.md)
+- [Control API / 外部制御API](reference/control-api.md)
 - [Automatic BG with kohdalab-shutter / 自動BG](reference/shutter.md)
 - [Measurement and storage / 測定・保存](reference/measurement.md)
 - [SDK bridge protocol / SDKブリッジ](../bridge/README.md)
@@ -36,3 +37,8 @@
 [Contributing / 開発](../CONTRIBUTING.md) · [Changelog / 履歴](../CHANGELOG.md) · [Roadmap / 今後](../ROADMAP.md) · [Security / 問題の報告](../SECURITY.md) · [Safety / 機器操作](../SAFETY.md) · [Redistribution / 再配布](../REDISTRIBUTION.md) · [Signing / 署名](../CODE_SIGNING_POLICY.md) · [Privacy / データ](../PRIVACY.md)
 
 Older flat document paths remain small redirect pages for existing links. / 従来のフラットな文書パスは、既存リンクのために案内ページとして残しています。
+
+## Suite integration / アプリ連携
+
+- [Common GUI control / 共通GUI API](reference/common-control-api.md)
+- [Common API validation / 共通APIの検証](validation/common-control-api.md)

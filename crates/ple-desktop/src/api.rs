@@ -92,6 +92,22 @@ impl Session {
         });
         Ok(json!({"lease":id,"timeout_s":10}))
     }
+    pub fn claim_common(&mut self, client: &str, lease: Option<&str>, busy: bool) -> Result<Value> {
+        if let Some(current) = &self.lease {
+            if current.client != client {
+                return Err(Error::new("ownership", "Another client owns control"));
+            }
+            if lease != Some(current.id.as_str()) {
+                return Err(Error::new(
+                    "invalid_lease",
+                    "The opaque lease is required for common reacquisition",
+                ));
+            }
+        } else if lease.is_some() {
+            return Err(Error::new("invalid_lease", "No active common lease exists"));
+        }
+        self.claim(client, busy)
+    }
     pub fn require(&mut self, body: &Value) -> Result<()> {
         let Some(lease) = &mut self.lease else {
             return Err(Error::new(
@@ -107,6 +123,23 @@ impl Session {
         }
         lease.touched = Instant::now();
         Ok(())
+    }
+    pub fn require_common(&mut self, body: &Value) -> Result<()> {
+        let client = body
+            .get("client_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Error::new("ownership_lost", "Common mutations require client_id"))?;
+        if self
+            .lease
+            .as_ref()
+            .is_none_or(|lease| lease.client != client)
+        {
+            return Err(Error::new(
+                "ownership_lost",
+                "The client does not own this lease",
+            ));
+        }
+        self.require(body)
     }
     pub fn expired(&self) -> bool {
         self.lease
