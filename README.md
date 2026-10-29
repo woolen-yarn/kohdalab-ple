@@ -1,7 +1,6 @@
 # KohdaLab PLE
 
 [![CI](https://github.com/woolen-yarn/kohdalab-ple/actions/workflows/test.yml/badge.svg)](https://github.com/woolen-yarn/kohdalab-ple/actions/workflows/test.yml)
-[![Release](https://img.shields.io/github/v/release/woolen-yarn/kohdalab-ple?include_prereleases)](https://github.com/woolen-yarn/kohdalab-ple/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Rust desktop application for photoluminescence excitation measurements using LightField, remote CONEX CC motion, and power monitoring.
