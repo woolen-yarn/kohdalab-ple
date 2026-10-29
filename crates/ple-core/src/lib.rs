@@ -238,11 +238,32 @@ impl Default for ScanConfig {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
+pub struct ApparatusConfig {
+    pub laser_model: String,
+    pub spectrometer_model: String,
+    pub power_meter_candidates: Vec<String>,
+    pub conex_x_default_port: String,
+    pub conex_y_default_port: String,
+}
+impl Default for ApparatusConfig {
+    fn default() -> Self {
+        Self {
+            laser_model: "3900S".into(),
+            spectrometer_model: "SpectraPro HRS-300".into(),
+            power_meter_candidates: vec!["PM100USB".into(), "PM100D".into()],
+            conex_x_default_port: "COM3".into(),
+            conex_y_default_port: "COM4".into(),
+        }
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub schema_version: u32,
     pub mode: Mode,
     pub sample: String,
     pub output_dir: String,
+    pub apparatus: ApparatusConfig,
     pub spectrometer: SpectrometerConfig,
     pub background: BackgroundConfig,
     pub analysis: Option<AnalysisConfig>,
@@ -262,6 +283,7 @@ impl Default for Config {
             mode: Mode::Demo,
             sample: "sample".into(),
             output_dir: "output".into(),
+            apparatus: Default::default(),
             spectrometer: Default::default(),
             background: Default::default(),
             analysis: None,
@@ -750,6 +772,26 @@ pub fn display_spectrum(wavelength: &[f64], counts: &[f64], energy: bool) -> Vec
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn apparatus_defaults_are_saved_without_changing_the_active_port() {
+        let mut profile = serde_json::to_value(super::Config::default()).unwrap();
+        profile.as_object_mut().unwrap().remove("apparatus");
+        profile["stage"]["com_port"] = serde_json::json!("COM8");
+        let config: super::Config = serde_json::from_value(profile).unwrap();
+        assert_eq!(config.stage.com_port, "COM8");
+        assert_eq!(config.apparatus.conex_x_default_port, "COM3");
+        assert_eq!(config.apparatus.conex_y_default_port, "COM4");
+        let saved = serde_json::to_value(&config).unwrap();
+        assert_eq!(saved["apparatus"]["laser_model"], "3900S");
+        assert_eq!(
+            saved["apparatus"]["spectrometer_model"],
+            "SpectraPro HRS-300"
+        );
+        assert_eq!(
+            saved["apparatus"]["power_meter_candidates"],
+            serde_json::json!(["PM100USB", "PM100D"])
+        );
+    }
     use super::*;
     #[test]
     fn shutter_states_are_explicit_device_values_and_not_assumed_zero_one() {

@@ -65,5 +65,15 @@
     "open_state": 0,
     "timeout_s": 10.0
   },
-  "analysis": null
+  "analysis": null,
+  "apparatus": {
+    "laser_model": "3900S",
+    "spectrometer_model": "SpectraPro HRS-300",
+    "power_meter_candidates": [
+      "PM100USB",
+      "PM100D"
+    ],
+    "conex_x_default_port": "COM3",
+    "conex_y_default_port": "COM4"
+  }
 }

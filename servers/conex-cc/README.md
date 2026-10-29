@@ -134,3 +134,7 @@ python3 servers/conex-cc/run_reference.py --run-reference --host 127.0.0.1 --por
 
 2 行目は `bridge/conex_server.py` に処理を委譲します。Newport SDK の導入と
 安全確認が完了したコントローラ PC 上でのみ使用してください。
+
+## Lab port defaults / 研究室の既定ポート
+
+CONEX X: **COM3**, CONEX Y: **COM4**, on the controller PC. The current PLE profile uses Y/COM4 through `stage.com_port`. These are defaults, not device discovery results; changing the profile does not command motion. The future supplied server should preserve the axis/port distinction. / 制御PC上でX＝COM3、Y＝COM4を既定とします。現在のPLEは`stage.com_port`でY／COM4を指定します。これは既定値であり機器を検出した結果ではありません。後日統合するサーバーでも軸とポートを区別します。
