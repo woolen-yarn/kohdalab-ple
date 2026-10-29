@@ -1,4 +1,4 @@
-# KohdaLab PLE 0.2.2 — Automatic apparatus discovery
+# KohdaLab PLE 0.2.3 — Automatic apparatus discovery
 
 This preview prepares the Windows portable application for instrument qualification with a 3900S laser, SpectraPro HRS-300, remote CONEX CC (X=COM3, Y=COM4; Y scan, 0–25 mm), and PM100USB or PM100D.
 
@@ -9,7 +9,7 @@ This preview prepares the Windows portable application for instrument qualificat
 
 ## Downloads
 
-Use `KohdaLab-PLE-v0.2.2-windows-x64.zip` for Windows instruments. Extract the whole archive and open `START-HERE.md`. macOS arm64 is for Demo/results; the source ZIP supports rebuilding. Rust is not required for portable runtime. Windows hardware operation requires separately installed 64-bit Python, LightField Automation and matching manufacturer drivers/helper; vendor DLLs are not bundled.
+Use `KohdaLab-PLE-v0.2.3-windows-x64.zip` for Windows instruments. Extract the whole archive and open `START-HERE.md`. macOS arm64 is for Demo/results; the source ZIP supports rebuilding. Rust is not required for portable runtime. Windows hardware operation requires separately installed 64-bit Python, LightField Automation and matching manufacturer drivers/helper; vendor DLLs are not bundled.
 
 Windows binaries are unsigned; macOS uses ad hoc signing. This is an instrument-qualification preview, with no new physical camera, laser, stage or power-sensor qualification claimed. See `VALIDATION.json` for the exact software checks.
 

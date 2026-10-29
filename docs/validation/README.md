@@ -1,8 +1,8 @@
-# v0.2.2 実機検証用プレビュー — 2026-10-29
+# v0.2.3 実機検証用プレビュー — 2026-10-29
 
-自動機器識別を含む版です。[Release v0.2.2](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.2)の`VALIDATION.json`に今回のソフト検証、`BUILD-ORIGIN.json`にソースcommitとZIP／実行ファイルのSHA-256を記録します。WindowsではZIPを展開した実行ファイルの版番号・設定検査を実施し、PE依存関係と静的CRTを確認します。実機SDK接続と実際の機器は現地の[実機確認](../guides/hardware-qualification.md)で検証します。
+自動機器識別を含む版です。[Release v0.2.3](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.2.3)の`VALIDATION.json`に今回のソフト検証、`BUILD-ORIGIN.json`にソースcommitとZIP／実行ファイルのSHA-256を記録します。WindowsではZIPを展開した実行ファイルの版番号・設定検査を実施し、PE依存関係と静的CRTを確認します。実機SDK接続と実際の機器は現地の[実機確認](../guides/hardware-qualification.md)で検証します。
 
-以下は過去の各時点での検証履歴です。旧JSONと旧件数をv0.2.2の結果として読み替えません。
+以下は過去の各時点での検証履歴です。旧JSONと旧件数をv0.2.3の結果として読み替えません。
 
 ---
 

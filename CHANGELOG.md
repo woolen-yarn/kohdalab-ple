@@ -2,7 +2,11 @@
 
 ## Unreleased / 未リリース
 
-## 0.2.2 — 2026-10-29
+## 0.2.3 — 2026-10-29
+
+- Compute the Windows binary checksum using .NET so packaging does not depend on optional PowerShell hash cmdlets. / Windowsのハッシュ計算を標準.NETへ変更。
+
+## 0.2.2 — 2026-10-29 (source preparation; no release assets)
 
 - Package automatic apparatus discovery for Windows instrument qualification; add first-run guidance, extracted-package checks, binary dependency inspection and release origin/validation assets. / 自動取得をWindows版へ同梱し、初回案内・ZIP展開後検証・依存関係・配布証跡を追加。
 

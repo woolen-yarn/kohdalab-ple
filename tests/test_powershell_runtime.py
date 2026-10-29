@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import shutil
+import shlex
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -14,6 +16,31 @@ PWSH = os.environ.get("PLE_PWSH") or shutil.which("pwsh")
 
 @unittest.skipUnless(PWSH, "set PLE_PWSH to run PowerShell execution tests")
 class PowerShellRuntimeTests(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX command fixtures; native PE inspection runs in release CI")
+    def test_import_inspection_without_powershell_hash_cmdlet(self):
+        with tempfile.TemporaryDirectory(prefix="ple import audit ") as temporary:
+            root = Path(temporary)
+            stage = root / "portable"; stage.mkdir()
+            dumpbin = root / "dumpbin.exe"
+            vswhere = root / "Program Files/Microsoft Visual Studio/Installer/vswhere.exe"
+            vswhere.parent.mkdir(parents=True)
+            binary = stage / "kohdalab-ple.exe"
+            for path, source in ((vswhere, "#!/bin/sh\nprintf '%s\\n' " + shlex.quote(str(dumpbin)) + "\n"),
+                                 (binary, "#!/bin/sh\necho 'kohdalab-ple fixture'\n")):
+                path.write_text(source); path.chmod(0o755)
+            launcher = root / "inspect.ps1"
+            launcher.write_text("function Get-FileHash { throw 'hash cmdlet unavailable' }; & $args[0] -Directory $args[1]\n")
+            environment = dict(os.environ)
+            environment["ProgramFiles(x86)"] = str(root / "Program Files")
+            for dependency, success in (("KERNEL32.dll", True), ("ucrtbase.dll", False)):
+                dumpbin.write_text("#!/bin/sh\nprintf '%s\\n' " + shlex.quote("    " + dependency) + "\n")
+                dumpbin.chmod(0o755)
+                result = subprocess.run([PWSH,"-NoProfile","-File",str(launcher),str(ROOT / "scripts/inspect-windows-binary.ps1"),str(stage)],env=environment,capture_output=True,text=True,timeout=20)
+                self.assertEqual(result.returncode == 0,success,result.stderr)
+                if success:
+                    metadata = json.loads((stage / "windows-metadata.json").read_text(encoding="utf-8-sig"))
+                    self.assertEqual(metadata["executable_sha256"],hashlib.sha256(binary.read_bytes()).hexdigest())
+
     def test_all_powershell_sources_parse(self):
         script = '''$errorsFound = @(); Get-ChildItem -LiteralPath $args[0] -Filter *.ps1 | ForEach-Object {
           $tokens = $null; $parseErrors = $null

@@ -1,4 +1,4 @@
-# KohdaLab PLE v0.2.2 — Windows実機検証の入口
+# KohdaLab PLE v0.2.3 — Windows実機検証の入口
 
 ZIP全体を展開し、このファイルと同じフォルダーの`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
 

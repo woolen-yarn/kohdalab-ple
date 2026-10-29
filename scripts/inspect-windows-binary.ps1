@@ -15,4 +15,8 @@ if ($imports | Where-Object { $_ -match '^(VCRUNTIME|MSVCP|CONCRT|UCRTBASE|api-m
 $imports | Set-Content -LiteralPath (Join-Path $Directory "windows-imports.txt") -Encoding UTF8
 $version = & $exe --version | Out-String
 if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($version)) { throw "Packaged application did not report its version" }
-[ordered]@{ application_version = $version.Trim(); executable_sha256 = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant(); imports = $imports; external_vc_runtime_required = $false; hardware_tested = $false } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Directory "windows-metadata.json") -Encoding UTF8
+$hash = [System.Security.Cryptography.SHA256]::Create()
+$stream = [System.IO.File]::OpenRead($exe)
+try { $digest = [System.BitConverter]::ToString($hash.ComputeHash($stream)).Replace('-', '').ToLowerInvariant() }
+finally { $stream.Dispose(); $hash.Dispose() }
+[ordered]@{ application_version = $version.Trim(); executable_sha256 = $digest; imports = $imports; external_vc_runtime_required = $false; hardware_tested = $false } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Directory "windows-metadata.json") -Encoding UTF8
