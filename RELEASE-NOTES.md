@@ -1,25 +1,17 @@
-# KohdaLab PLE 0.3.5 preview
+# KohdaLab PLE 0.3.6 preview
 
-## Changes / 変更内容
+## Changes
 
-Add Control Protocol 1 and the shared Python SDK. Distinguish command ACKs from linked measurement jobs, retain exclusive ownership through unresolved cleanup, and report cleanup failures explicitly. Keep the original GUI measurement/confirmation workflow.
+On first normal GUI launch, a missing `~/.kohdalab/ple/config.json` (`%USERPROFILE%\.kohdalab\ple\config.json` on Windows) is automatically created from safe built-in defaults. No manual JSON preparation is needed.
 
-## Compatibility and migration / 互換性と移行
+## Compatibility and safety
 
-Native clients remain supported; native Stop retains its ownership. Only accepted common release retires its lease after cleanup confirmation. Existing optical cleanup barrier, BG/analysis confirmation, manufacturer SDK requirements and CSV/SPE storage remain. Config stays `~/.kohdalab/ple/config.json`.
+Initialization publishes a complete file atomically without replacing an existing profile. Existing invalid, foreign or unsupported profiles remain intact and errors are reported. Explicit profiles and Demo/smoke launches do not initialize production defaults. Creating/loading settings does not connect hardware, enable outputs, acquire images or move shutters. Existing acquisition, data formats, native/common APIs and cleanup policies are unchanged.
 
-## Downloads / ダウンロード
+## Downloads and validation
 
-Windows x64 Setup/portable ZIP, macOS Apple-silicon Demo/results ZIP, source and checksums. Physical LightField acquisition still requires Windows, 64-bit Python and matching manufacturer SDKs. Compatible Shutter companion and its source/licenses are included as before. Windows is unsigned; Mac is ad hoc signed, not notarized.
-
-[Release packages](https://github.com/woolen-yarn/kohdalab-ple/releases). Existing older releases remain available.
-
-## Validation and provenance / 検証と出所
-
-Local Rust workspace: 108 passed; strict clippy passed. Actual native Demo GUI completed six rows and 641 spectral bins with ownership, confirmation, idempotency, expiry and cleanup checks. Focused common tests cover failed cleanup, active release and native Stop compatibility.
-
-The common Python SDK has nine device-free tests. Source/build identifiers, package manifests and SHA-256 evidence accompany the release. These checks do not newly qualify physical instruments, optical closure, camera calibration or scientific accuracy.
+Use the installer, portable package and corresponding source/build kit attached to this release. Platform tests and artifact provenance qualify the exact packaged source; first-launch regression checks include concurrent creation, preservation and unusable directories. No new physical-device qualification is claimed. Windows executables remain unsigned; supported Mac packages use ad hoc signing and are not notarized.
 
 ## 日本語
 
-共通GUI APIを追加し、受付と測定完了、停止確認の未完了・失敗を区別します。従来API、BG・解析確認、CSV/SPEを維持します。実機取得にはWindowsとメーカーSDK等が必要で、MacはDemo・結果確認用です。
+初回の通常GUI起動時に、アプリ専用の標準設定を自動作成します。既存・不正・未対応の設定は保持し、エラーを表示します。設定作成・読込による装置接続・出力ON・撮影・シャッター移動は行いません。従来の測定・保存形式・API・終了処理は変更しません。
