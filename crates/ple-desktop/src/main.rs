@@ -803,8 +803,8 @@ mod config_storage_tests {
         assert!(path.is_file());
         let first = std::fs::read(&path).unwrap();
         assert_eq!(
-            read_profile(&path).unwrap().output_dir,
-            directory.path().join("ple/results").display().to_string()
+            PathBuf::from(read_profile(&path).unwrap().output_dir),
+            directory.path().join("ple").join("results")
         );
         create_default_profile(&path).unwrap();
         assert_eq!(first, std::fs::read(&path).unwrap());
