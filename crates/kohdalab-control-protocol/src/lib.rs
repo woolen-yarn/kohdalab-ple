@@ -1,11 +1,17 @@
 //! KohdaLab Control Protocol 1 boundary helpers. No sockets or device operations.
 //! The identical vendored crate is tested with each product; policy stays in its engine.
+pub mod paths;
+
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const VERSION: u64 = 1;
 pub const PROTOCOL: &str = "kohdalab-control";
-pub const DISCOVERY_DIRECTORY: &str = ".kohdalab/control";
+pub const LEGACY_DISCOVERY_DIRECTORY: &str = ".kohdalab/control";
+#[deprecated(
+    note = "Use paths::AppPaths::for_app(application)?.run_dir(); the shared directory is a legacy read-only fallback"
+)]
+pub const DISCOVERY_DIRECTORY: &str = LEGACY_DISCOVERY_DIRECTORY;
 
 /// Add the canonical descriptor without removing a product's compatibility fields.
 pub fn descriptor(mut legacy: Value, application: &str, api_version: u64) -> Value {

@@ -24,7 +24,7 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| v0.3.6 preview / 実機確認用 | [Release v0.3.6](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.6): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
+| v0.3.7 preview / 実機確認用 | [Release v0.3.7](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.7): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
@@ -46,7 +46,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
-[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.6 release notes / 更新内容](RELEASE-NOTES.md)
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.7 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 
@@ -108,7 +108,7 @@ Project code is [MIT licensed](LICENSE). Keep dependency notices and license tex
 
 ### Application directories
 
-Results: `~/.kohdalab/ple/results`. Settings: `~/.kohdalab/ple/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config.json`). On the first normal GUI launch, this file is created from safe embedded defaults; no hardware is connected and no output is enabled automatically. Existing valid files are retained. Invalid or unsupported profiles are preserved and their errors remain visible in the GUI. / 結果は`~/.kohdalab/ple/results`、設定は`~/.kohdalab/ple/config.json`（Windowsでは`%USERPROFILE%\.kohdalab\ple\config.json`）です。通常の初回GUI起動では安全な内蔵既定値から自動作成され、機器接続や出力有効化は行いません。既存の有効な設定は保持し、不正・未対応の設定は置き換えずGUI内にエラーを表示します。
+Results: `~/.kohdalab/ple/results`. Settings: `~/.kohdalab/ple/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config\config.json`). Runtime API descriptors use `~/.kohdalab/ple/run`, and logs use `~/.kohdalab/ple/logs`. On the first normal GUI launch, this file is created from safe embedded defaults; no hardware is connected and no output is enabled automatically. Existing valid files are retained. Invalid or unsupported profiles are preserved and their errors remain visible in the GUI. / 結果は`~/.kohdalab/ple/results`、設定は`~/.kohdalab/ple/config/config.json`（Windowsでは`%USERPROFILE%\.kohdalab\ple\config\config.json`）です。実行時APIの検出ファイルは`~/.kohdalab/ple/run`、ログは`~/.kohdalab/ple/logs`です。通常の初回GUI起動では安全な内蔵既定値から自動作成され、機器接続や出力有効化は行いません。既存の有効な設定は保持し、不正・未対応の設定は置き換えずGUI内にエラーを表示します。
 Windows Setup: `C:\Program Files\Kohdalab\KohdaLab PLE`.
 macOS: `/Applications/KohdaLab PLE.app`. See [installation](docs/guides/install.md).
 

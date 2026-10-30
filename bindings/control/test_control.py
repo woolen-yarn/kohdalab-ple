@@ -16,6 +16,31 @@ from kohdalab_control import (
 )
 
 
+class DirectoryLayoutTests(unittest.TestCase):
+    def test_app_owned_run_discovery_and_explicit_override(self):
+        import os
+        import kohdalab_control as control
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp}):
+            root = Path(tmp) / ".kohdalab"
+            iv = root / "iv/run/iv.json"
+            trkr = root / "trkr/run/trkr.json"
+            explicit = Path(tmp) / "custom/other.json"
+            for path in (iv, trkr, explicit):
+                path.parent.mkdir(parents=True)
+                path.write_text("{}")
+            def endpoint(path):
+                name = "trkr" if path == trkr else "iv"
+                return Endpoint("kohdalab-" + name, "127.0.0.1", 1, "private", str(path), 1, path)
+            def describe(endpoint, *args):
+                return {"application": endpoint.application, "control_protocol": 1}
+            with patch.object(control, "load_endpoint", side_effect=endpoint), patch.object(control, "_exchange", side_effect=describe):
+                self.assertEqual({e.path for e in discover()}, {iv, trkr})
+                self.assertEqual([e.path for e in discover("kohdalab-iv")], [iv])
+                self.assertEqual([e.path for e in discover(directory=explicit.parent)], [explicit])
+            self.assertFalse((root / "control").exists())
+            self.assertFalse((root / "iv/config").exists())
+
+
 class BoundaryTests(unittest.TestCase):
     def endpoint(self, port=1):
         return Endpoint(

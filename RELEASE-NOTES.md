@@ -1,17 +1,19 @@
-# KohdaLab PLE 0.3.6 preview
+# KohdaLab PLE 0.3.7 preview
 
 ## Changes
 
-On first normal GUI launch, a missing `~/.kohdalab/ple/config.json` (`%USERPROFILE%\.kohdalab\ple\config.json` on Windows) is automatically created from safe built-in defaults. No manual JSON preparation is needed.
+The canonical configuration is `~/.kohdalab/ple/config/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config\config.json`). Runtime API descriptors use `ple/run`; default measurements and application logs use sibling `results` and `logs` where applicable. Camera exports continue to honor the user-selected folder. The shared path definition is vendored identically in all five applications.
 
 ## Compatibility and safety
 
-Initialization publishes a complete file atomically without replacing an existing profile. Existing invalid, foreign or unsupported profiles remain intact and errors are reported. Explicit profiles and Demo/smoke launches do not initialize production defaults. Creating/loading settings does not connect hardware, enable outputs, acquire images or move shutters. Existing acquisition, data formats, native/common APIs and cleanup policies are unchanged.
+A missing default is created atomically on the first normal GUI launch. Existing settings, including invalid/foreign/unsupported files, are preserved with visible errors. Old direct-child, shared, preview and AppData profiles are not imported or removed automatically; use Browse/Load after reviewing an existing profile. Explicit profile and output paths remain respected. No device connection, source output, capture or shutter movement is added. Scientific file formats and control ownership/cleanup policies are unchanged.
+
+Update the bundled Python clients/common SDK (1.0.1) with the GUI. They discover the new app-owned run directory; legacy discovery is read-only. The wire protocol stays at version 1. Existing cross-process recovery interlocks and OS driver caches retain their safety/OS-managed namespaces rather than being mistaken for GUI configuration.
 
 ## Downloads and validation
 
-Use the installer, portable package and corresponding source/build kit attached to this release. Platform tests and artifact provenance qualify the exact packaged source; first-launch regression checks include concurrent creation, preservation and unusable directories. No new physical-device qualification is claimed. Windows executables remain unsigned; supported Mac packages use ad hoc signing and are not notarized.
+Windows Setup/portable, supported Mac distribution and corresponding source/build kit are attached. Windows artifacts remain unsigned; supported Mac applications are ad hoc signed and not notarized. Normal GUI startup is tested in isolated user homes, including restart/invalid-file preservation and canonical config/run paths. Platform tests, installer evidence and artifact/source hashes qualify the attached builds; no new physical-device qualification is claimed.
 
 ## 日本語
 
-初回の通常GUI起動時に、アプリ専用の標準設定を自動作成します。既存・不正・未対応の設定は保持し、エラーを表示します。設定作成・読込による装置接続・出力ON・撮影・シャッター移動は行いません。従来の測定・保存形式・API・終了処理は変更しません。
+設定は `ple/config/config.json`、実行時APIファイルは同じアプリ配下の `run` に統一します。結果・アプリログもアプリ配下の `results`・`logs` を使います（明示した保存先は保持）。初回は標準設定を自動作成します。旧設定は削除・自動移行せず、不正な設定は上書きせずエラーを表示します。装置への自動接続・出力ONや、測定・データ形式・安全動作の変更はありません。Pythonクライアントも同梱版へ更新してください。

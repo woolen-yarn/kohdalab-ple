@@ -73,9 +73,16 @@ def _positive(value, name):
     return float(value)
 
 
-def _directory() -> Path:
+def _directories(application=None) -> list[Path]:
     home = os.environ.get("USERPROFILE") if os.name == "nt" else os.environ.get("HOME")
-    return (Path(home) if home else Path.home()) / ".kohdalab" / "control"
+    root = (Path(home) if home else Path.home()) / ".kohdalab"
+    applications = ("iv", "trkr", "camera", "shutter", "ple")
+    if application is not None:
+        name = application.removeprefix("kohdalab-")
+        applications = (name,) if name in applications else ()
+    # Legacy paths are read-only discovery fallbacks; new applications write
+    # only their own run directory. Explicit directory= remains exact.
+    return [root / name / "run" for name in applications] + [root / "control", root / "run"]
 
 
 def load_endpoint(path) -> Endpoint:
@@ -213,7 +220,8 @@ def discover(application=None, *, directory=None, probe_timeout=0.25):
     """Find responsive instances; never select one by process/file recency."""
     probe_timeout = _positive(probe_timeout, "probe_timeout")
     endpoints = {}
-    paths = sorted((Path(directory) if directory else _directory()).glob("*.json"))
+    directories = [Path(directory)] if directory is not None else _directories(application)
+    paths = sorted({path for folder in directories for path in folder.glob("*.json")})
     if len(paths) > 256:
         raise ControlError(
             "Too many discovery files; select an explicit endpoint", code="validation"

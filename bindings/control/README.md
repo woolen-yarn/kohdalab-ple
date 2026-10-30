@@ -27,7 +27,7 @@ with ControlClient("kohdalab-iv") as app:
 The GUI must be started with its documented local API opt-in/launch mode and a
 reviewed profile. Multiple instances require an explicit descriptor `endpoint=`;
 selection by process recency is never used. Canonical discovery is
-`~/.kohdalab/control` (`%USERPROFILE%\.kohdalab\control` on Windows).
+`~/.kohdalab/<app>/run` (`%USERPROFILE%\.kohdalab\<app>\run` on Windows).
 Read-only inspection does not claim a lease. Context entry or `invoke` mutations
 acquire GUI ownership. Do not use a second native client to open the same device.
 

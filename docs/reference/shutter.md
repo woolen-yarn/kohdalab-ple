@@ -12,7 +12,7 @@ PLEの測定エンジンがBGの取得順序を管理し、[kohdalab-shutter](ht
 4. PLEの **Analysis / BG settings → Automatic shutter → kohdalab-shutter** を選びます。
 5. CH0は`0`と入力します。shutter GUIの表示順を入れ替えても、物理CH番号は変わりません。
 
-endpointは通常空欄です。`~/.kohdalab/control/shutter-*.json`を参照で探索し、稼働GUIが1つだけの場合に接続します。Windowsではユーザープロファイル下です。複数GUIがある場合は、対象の接続情報ファイルを明示します。ポートやtokenを手入力する必要はありません。tokenは測定データに保存しません。
+endpointは通常空欄です。`~/.kohdalab/shutter/run/shutter-*.json`を優先して探索し、稼働GUIが1つだけの場合に接続します。Windowsではユーザープロファイル下です。複数GUIがある場合は、対象の接続情報ファイルを明示します。ポートやtokenを手入力する必要はありません。tokenは測定データに保存しません。
 
 実機設定例は[ple-shutter-settings.json](../../examples/ple-shutter-settings.json)です。LightField、CONEX、パワーメーターの接続先は実値へ置き換えます。
 

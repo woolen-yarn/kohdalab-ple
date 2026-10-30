@@ -40,7 +40,7 @@ helper IPC for a public GUI API.
 
 | Area | Common behavior |
 | --- | --- |
-| Discovery | One atomic per-instance descriptor in `~/.kohdalab/control` (Windows `%USERPROFILE%\.kohdalab\control`); app, instance UUID, PID, loopback host/port, private token, protocol version |
+| Discovery | One atomic per-instance descriptor in `~/.kohdalab/<app>/run` (Windows `%USERPROFILE%\.kohdalab\<app>\run`); app, instance UUID, PID, loopback host/port, private token, protocol version |
 | Wire | Local TCP JSON Lines, `control_protocol: 1`, `method: control.<name>` |
 | Success | `ok: true`, `request_id`, `result`, `error: null` |
 | Error | `ok: false`, `request_id`, `error: {code, application_code, message, retryable}` |
