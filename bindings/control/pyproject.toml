@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kohdalab-control"
-version = "1.0.0"
+version = "1.0.1"
 description = "Standard-library client for the KohdaLab Control Protocol"
 requires-python = ">=3.10"
 license = "MIT"

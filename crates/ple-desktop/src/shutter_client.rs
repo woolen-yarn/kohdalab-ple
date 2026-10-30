@@ -562,10 +562,15 @@ fn select_endpoint(explicit: Option<PathBuf>, timeout: Duration) -> Result<Endpo
 }
 
 fn control_directory() -> Option<PathBuf> {
-    std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
-        .map(|p| p.join(".kohdalab").join("control"))
+    let canonical = kohdalab_control_protocol::paths::AppPaths::for_app("shutter")
+        .ok()
+        .map(|paths| paths.run_dir());
+    canonical.or_else(|| {
+        std::env::var_os("USERPROFILE")
+            .or_else(|| std::env::var_os("HOME"))
+            .map(PathBuf::from)
+            .map(|p| p.join(".kohdalab").join("control"))
+    })
 }
 
 fn load_endpoint(path: &Path) -> Result<Endpoint, String> {

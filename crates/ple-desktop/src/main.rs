@@ -118,11 +118,8 @@ impl PleApp {
         ctx.set_visuals(egui::Visuals::dark());
         precision::configure(ctx);
         let mut config = Config::default();
-        if let Some(home) = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }) {
-            config.output_dir = PathBuf::from(home)
-                .join(".kohdalab/ple/results")
-                .to_string_lossy()
-                .into();
+        if let Ok(paths) = kohdalab_control_protocol::paths::AppPaths::for_app("ple") {
+            config.output_dir = paths.results_dir().to_string_lossy().into();
         }
         let mut message = launch.startup_error.take();
         if let Some(c) = launch.loaded_config.take() {
@@ -483,10 +480,9 @@ impl PleApp {
     }
 }
 fn default_config_path() -> PathBuf {
-    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .map(PathBuf::from)
-        .unwrap_or_else(std::env::temp_dir);
-    home.join(".kohdalab").join("ple").join("config.json")
+    kohdalab_control_protocol::paths::AppPaths::for_app("ple")
+        .map(|paths| paths.config_file())
+        .unwrap_or_else(|_| std::env::temp_dir().join(".kohdalab/ple/config/config.json"))
 }
 
 /// Create the per-user profile once on a normal GUI launch.  A hard link from
@@ -501,7 +497,14 @@ fn create_default_profile(path: &std::path::Path) -> Result<(), String> {
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(std::path::Path::new("."));
     std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    let config = Config::default();
+    let app_root = path
+        .parent()
+        .and_then(|directory| directory.parent())
+        .ok_or("Default configuration requires an application config directory")?;
+    let config = Config {
+        output_dir: app_root.join("results").display().to_string(),
+        ..Default::default()
+    };
     config.plan()?;
     let mut value = serde_json::to_value(config).map_err(|e| e.to_string())?;
     value["application"] = serde_json::json!("kohdalab-ple");
@@ -742,13 +745,9 @@ fn main() -> eframe::Result {
     if launch.gui_api {
         let directory = match launch.api_dir.take() {
             Some(p) => p,
-            None => std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-                .map(|p| PathBuf::from(p).join(kohdalab_control_protocol::DISCOVERY_DIRECTORY))
-                .ok_or_else(|| {
-                    eframe::Error::AppCreation(Box::new(std::io::Error::other(
-                        "Cannot locate API discovery directory",
-                    )))
-                })?,
+            None => kohdalab_control_protocol::paths::AppPaths::for_app("ple")
+                .map(|paths| paths.run_dir())
+                .map_err(|e| eframe::Error::AppCreation(Box::new(std::io::Error::other(e))))?,
         };
         let server = remote_gui::Server::start(directory)
             .map_err(|e| eframe::Error::AppCreation(Box::new(std::io::Error::other(e))))?;
@@ -774,7 +773,7 @@ mod config_storage_tests {
     #[test]
     fn native_profile_round_trip_and_foreign_file_protection() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ple/config.json");
+        let path = directory.path().join("ple/config/config.json");
         save_profile(&path, &Config::default()).unwrap();
         let value: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
@@ -793,17 +792,20 @@ mod config_storage_tests {
     }
     #[test]
     fn default_path_has_no_preview_name() {
-        assert!(default_config_path().ends_with(".kohdalab/ple/config.json"));
+        assert!(default_config_path().ends_with(".kohdalab/ple/config/config.json"));
     }
 
     #[test]
     fn first_launch_creates_a_valid_profile_without_replacing_existing_bytes() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ple/config.json");
+        let path = directory.path().join("ple/config/config.json");
         create_default_profile(&path).unwrap();
         assert!(path.is_file());
         let first = std::fs::read(&path).unwrap();
-        assert!(read_profile(&path).is_ok());
+        assert_eq!(
+            PathBuf::from(read_profile(&path).unwrap().output_dir),
+            directory.path().join("ple").join("results")
+        );
         create_default_profile(&path).unwrap();
         assert_eq!(first, std::fs::read(&path).unwrap());
     }
@@ -811,7 +813,7 @@ mod config_storage_tests {
     #[test]
     fn first_launch_preserves_foreign_or_invalid_profile_for_error_reporting() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ple/config.json");
+        let path = directory.path().join("ple/config/config.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let bytes = br#"{"application":"kohdalab-iv"}"#;
         std::fs::write(&path, bytes).unwrap();
@@ -823,7 +825,7 @@ mod config_storage_tests {
     #[test]
     fn concurrent_first_launches_publish_one_complete_json() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ple/config.json");
+        let path = directory.path().join("ple/config/config.json");
         let mut workers = Vec::new();
         for _ in 0..8 {
             let path = path.clone();
@@ -849,7 +851,7 @@ mod config_storage_tests {
     #[test]
     fn future_profile_is_preserved_for_startup_error_reporting() {
         let directory = tempfile::tempdir().unwrap();
-        let path = directory.path().join("ple/config.json");
+        let path = directory.path().join("ple/config/config.json");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         let bytes = br#"{"application":"kohdalab-ple","schema_version":999}"#;
         std::fs::write(&path, bytes).unwrap();
