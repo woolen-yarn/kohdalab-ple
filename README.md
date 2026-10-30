@@ -108,7 +108,7 @@ Project code is [MIT licensed](LICENSE). Keep dependency notices and license tex
 
 ### Application directories
 
-Results: `~/.kohdalab/ple/results`. Settings: `~/.kohdalab/ple/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config.json`). On the first normal GUI launch, this file is created from safe embedded defaults; no hardware is connected and no output is enabled automatically. Existing valid, invalid, or future-version files are preserved and reported rather than replaced. / 結果は`~/.kohdalab/ple/results`、設定は`~/.kohdalab/ple/config.json`（Windowsでは`%USERPROFILE%\.kohdalab\ple\config.json`）です。通常の初回GUI起動では安全な内蔵既定値から自動作成され、機器接続や出力有効化は行いません。既存の有効・不正・将来版ファイルは置き換えず、エラーとして知らせます。
+Results: `~/.kohdalab/ple/results`. Settings: `~/.kohdalab/ple/config.json` (Windows: `%USERPROFILE%\.kohdalab\ple\config.json`). On the first normal GUI launch, this file is created from safe embedded defaults; no hardware is connected and no output is enabled automatically. Existing valid files are retained. Invalid or unsupported profiles are preserved and their errors remain visible in the GUI. / 結果は`~/.kohdalab/ple/results`、設定は`~/.kohdalab/ple/config.json`（Windowsでは`%USERPROFILE%\.kohdalab\ple\config.json`）です。通常の初回GUI起動では安全な内蔵既定値から自動作成され、機器接続や出力有効化は行いません。既存の有効な設定は保持し、不正・未対応の設定は置き換えずGUI内にエラーを表示します。
 Windows Setup: `C:\Program Files\Kohdalab\KohdaLab PLE`.
 macOS: `/Applications/KohdaLab PLE.app`. See [installation](docs/guides/install.md).
 

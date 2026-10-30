@@ -40,6 +40,7 @@ struct Launch {
     api_dir: Option<PathBuf>,
     api_server: Option<remote_gui::Server>,
     loaded_config: Option<Config>,
+    startup_error: Option<String>,
 }
 struct HeatmapCache {
     key: (usize, usize, bool),
@@ -123,10 +124,12 @@ impl PleApp {
                 .to_string_lossy()
                 .into();
         }
-        let mut message = None;
+        let mut message = launch.startup_error.take();
         if let Some(c) = launch.loaded_config.take() {
             config = c;
-        } else if let Some(p) = &launch.config {
+        } else if message.is_none()
+            && let Some(p) = &launch.config
+        {
             match read_profile(p) {
                 Ok(c) => config = c,
                 Err(e) => message = Some(e),
@@ -681,24 +684,29 @@ fn main() -> eframe::Result {
             }
         }
     }
-    if launch.config.is_none()
+    let implicit_default_profile = launch.config.is_none()
         && !launch.auto_demo
         && !launch.check_config
-        && launch.screenshot.is_none()
-    {
+        && launch.screenshot.is_none();
+    if implicit_default_profile {
         let path = default_config_path();
+        launch.config = Some(path.clone());
         match path.try_exists() {
-            Ok(true) => launch.config = Some(path),
+            Ok(true) => {}
             Ok(false) => {
-                create_default_profile(&path).map_err(|error| {
-                    eframe::Error::AppCreation(Box::new(std::io::Error::other(format!(
+                if let Err(error) = create_default_profile(&path) {
+                    launch.startup_error = Some(format!(
                         "Cannot create default profile {}: {error}",
                         path.display()
-                    ))))
-                })?;
-                launch.config = Some(path);
+                    ));
+                }
             }
-            Err(error) => return Err(eframe::Error::AppCreation(Box::new(error))),
+            Err(error) => {
+                launch.startup_error = Some(format!(
+                    "Cannot access default profile {}: {error}",
+                    path.display()
+                ));
+            }
         }
     }
     if let Some(path) = &launch.config {
@@ -706,9 +714,16 @@ fn main() -> eframe::Result {
         match checked {
             Ok(c) => launch.loaded_config = Some(c),
             Err(e) => {
-                return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
-                    format!("Invalid explicit profile {}: {e}", path.display()),
-                ))));
+                if implicit_default_profile {
+                    if launch.startup_error.is_none() {
+                        launch.startup_error =
+                            Some(format!("Invalid default profile {}: {e}", path.display()));
+                    }
+                } else {
+                    return Err(eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                        format!("Invalid explicit profile {}: {e}", path.display()),
+                    ))));
+                }
             }
         }
     }
@@ -841,5 +856,20 @@ mod config_storage_tests {
         create_default_profile(&path).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
         assert!(read_profile(&path).is_err());
+    }
+
+    #[test]
+    fn implicit_startup_error_is_kept_for_the_gui_message_area() {
+        let context = egui::Context::default();
+        let launch = Launch {
+            startup_error: Some("Invalid default profile; repair it in Settings".into()),
+            ..Default::default()
+        };
+        let app = PleApp::with_context(&context, launch);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Invalid default profile; repair it in Settings")
+        );
+        assert!(app.connected.iter().all(|connected| !connected));
     }
 }
