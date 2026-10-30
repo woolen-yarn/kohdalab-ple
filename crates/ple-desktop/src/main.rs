@@ -485,6 +485,36 @@ fn default_config_path() -> PathBuf {
         .unwrap_or_else(std::env::temp_dir);
     home.join(".kohdalab").join("ple").join("config.json")
 }
+
+/// Create the per-user profile once on a normal GUI launch.  A hard link from
+/// a fully synced temporary file provides no-clobber creation even if another
+/// process starts at the same time; an existing profile is never replaced.
+fn create_default_profile(path: &std::path::Path) -> Result<(), String> {
+    if path.try_exists().map_err(|e| e.to_string())? {
+        return Ok(());
+    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new("."));
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let config = Config::default();
+    config.plan()?;
+    let mut value = serde_json::to_value(config).map_err(|e| e.to_string())?;
+    value["application"] = serde_json::json!("kohdalab-ple");
+    let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
+    use std::io::Write;
+    let temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let mut file = temporary.reopen().map_err(|e| e.to_string())?;
+    file.write_all(&bytes).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())?;
+    match temporary.persist_noclobber(path) {
+        Ok(_) => Ok(()),
+        Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(e) => Err(e.error.to_string()),
+    }
+}
+
 fn read_profile(path: &std::path::Path) -> Result<Config, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
@@ -659,7 +689,14 @@ fn main() -> eframe::Result {
         let path = default_config_path();
         match path.try_exists() {
             Ok(true) => launch.config = Some(path),
-            Ok(false) => {}
+            Ok(false) => {
+                create_default_profile(&path).map_err(|error| {
+                    eframe::Error::AppCreation(Box::new(std::io::Error::other(
+                        format!("Cannot create default profile {}: {error}", path.display()),
+                    )))
+                })?;
+                launch.config = Some(path);
+            }
             Err(error) => return Err(eframe::Error::AppCreation(Box::new(error))),
         }
     }
@@ -741,5 +778,67 @@ mod config_storage_tests {
     #[test]
     fn default_path_has_no_preview_name() {
         assert!(default_config_path().ends_with(".kohdalab/ple/config.json"));
+    }
+
+    #[test]
+    fn first_launch_creates_a_valid_profile_without_replacing_existing_bytes() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ple/config.json");
+        create_default_profile(&path).unwrap();
+        assert!(path.is_file());
+        let first = std::fs::read(&path).unwrap();
+        assert!(read_profile(&path).is_ok());
+        create_default_profile(&path).unwrap();
+        assert_eq!(first, std::fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn first_launch_preserves_foreign_or_invalid_profile_for_error_reporting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ple/config.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let bytes = br#"{"application":"kohdalab-iv"}"#;
+        std::fs::write(&path, bytes).unwrap();
+        create_default_profile(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(read_profile(&path).is_err());
+    }
+
+    #[test]
+    fn concurrent_first_launches_publish_one_complete_json() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ple/config.json");
+        let mut workers = Vec::new();
+        for _ in 0..8 {
+            let path = path.clone();
+            workers.push(std::thread::spawn(move || create_default_profile(&path)));
+        }
+        for worker in workers {
+            assert!(worker.join().unwrap().is_ok());
+        }
+        assert!(read_profile(&path).is_ok());
+    }
+
+    #[test]
+    fn unusable_profile_parent_is_reported_without_partial_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("ple");
+        std::fs::write(&parent, b"occupied").unwrap();
+        let path = parent.join("config.json");
+        let error = create_default_profile(&path).unwrap_err();
+        assert!(!error.is_empty());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn future_profile_is_preserved_for_startup_error_reporting() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ple/config.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let bytes = br#"{"application":"kohdalab-ple","schema_version":999}"#;
+        std::fs::write(&path, bytes).unwrap();
+        create_default_profile(&path).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(read_profile(&path).is_err());
     }
 }

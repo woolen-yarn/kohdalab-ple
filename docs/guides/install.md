@@ -12,6 +12,7 @@ Download Setup.exe (recommended) or the whole portable ZIP and its SHA-256 file 
 
 The suite uses one application directory per product. PLE settings default to
 `~/.kohdalab/ple/config.json` (`%USERPROFILE%\.kohdalab\ple\config.json` on Windows).
+The first normal GUI launch creates this file from safe embedded defaults without connecting hardware or enabling outputs. Existing profiles are never overwritten automatically.
 A normal launch loads that file if present. Demo screenshots and explicit
 `--config` profiles do not read it. Save writes `application: "kohdalab-ple"`;
 foreign or damaged profiles cannot be silently overwritten. Default results go to `~/.kohdalab/ple/results`. Example files remain
