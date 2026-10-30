@@ -691,9 +691,10 @@ fn main() -> eframe::Result {
             Ok(true) => launch.config = Some(path),
             Ok(false) => {
                 create_default_profile(&path).map_err(|error| {
-                    eframe::Error::AppCreation(Box::new(std::io::Error::other(
-                        format!("Cannot create default profile {}: {error}", path.display()),
-                    )))
+                    eframe::Error::AppCreation(Box::new(std::io::Error::other(format!(
+                        "Cannot create default profile {}: {error}",
+                        path.display()
+                    ))))
                 })?;
                 launch.config = Some(path);
             }
