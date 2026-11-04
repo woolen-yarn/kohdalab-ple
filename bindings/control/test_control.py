@@ -19,7 +19,9 @@ import kohdalab_control as control
 
 class DirectoryLayoutTests(unittest.TestCase):
     def test_home_selection_prefers_native_nonempty_value_and_falls_back(self):
-        fallback = Path("/fallback")
+        # A rooted path without a drive is not absolute on Windows.
+        fallback = Path(__file__).resolve().parent / "fallback"
+        self.assertTrue(fallback.is_absolute())
         self.assertEqual(
             control._home_directory(
                 "unix-home", "windows-home", False, lambda: fallback

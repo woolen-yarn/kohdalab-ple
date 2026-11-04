@@ -1,6 +1,6 @@
-# KohdaLab PLE v0.3.4 — Windows実機検証の入口
+# KohdaLab PLE v0.3.8 — Windows実機検証の入口
 
-推奨は`KohdaLab-PLE-0.3.4-Setup.exe`です。実行して管理者権限を許可し、インストール後はスタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPを使う場合は全体を展開し、`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
+推奨は`KohdaLab-PLE-0.3.8-Setup.exe`です。実行して管理者権限を許可し、インストール後はスタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPを使う場合は全体を展開し、`kohdalab-ple.exe`を起動します。アプリの利用にRustは不要です。まずDemoで画面を確認できます。
 
 アプリ本体は`C:\Program Files\Kohdalab\KohdaLab PLE`、設定は`%USERPROFILE%\.kohdalab\ple\config\config.json`、既定の測定結果は`%USERPROFILE%\.kohdalab\ple\results`です。実行時APIの検出ファイルは`run`、ログは`logs`に保存します。ユーザー用の実機設定はこの設定フォルダーへコピーしてください。インストール先のexamplesを直接編集しません。更新時の旧アプリは隣接フォルダーに退避し、設定・測定結果はアンインストール後も残ります。
 
