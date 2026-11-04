@@ -42,3 +42,5 @@ Older flat document paths remain small redirect pages for existing links. / 従�
 
 - [Common GUI control / 共通GUI API](reference/common-control-api.md)
 - [Common API validation / 共通APIの検証](validation/common-control-api.md)
+
+- [Suite quality audit / 5アプリ品質点検](validation/suite-quality-audit.md)

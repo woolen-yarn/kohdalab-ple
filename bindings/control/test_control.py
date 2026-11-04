@@ -14,9 +14,69 @@ from kohdalab_control import (
     discover,
     load_endpoint,
 )
+import kohdalab_control as control
 
 
 class DirectoryLayoutTests(unittest.TestCase):
+    def test_home_selection_prefers_native_nonempty_value_and_falls_back(self):
+        fallback = Path("/fallback")
+        self.assertEqual(
+            control._home_directory(
+                "unix-home", "windows-home", False, lambda: fallback
+            ),
+            Path("unix-home"),
+        )
+        self.assertEqual(
+            control._home_directory(
+                "unix-home", "windows-home", True, lambda: fallback
+            ),
+            Path("windows-home"),
+        )
+        for windows in (False, True):
+            self.assertEqual(
+                control._home_directory("", "profile", windows, lambda: fallback),
+                Path("profile"),
+            )
+            self.assertEqual(
+                control._home_directory("home", "", windows, lambda: fallback),
+                Path("home"),
+            )
+            self.assertEqual(
+                control._home_directory("", "", windows, lambda: fallback), fallback
+            )
+
+    def test_home_fallback_is_lazy_and_never_allows_relative_discovery_root(self):
+        def unavailable():
+            raise AssertionError("fallback should not be evaluated")
+
+        self.assertEqual(
+            control._home_directory("", "profile", False, unavailable),
+            Path("profile"),
+        )
+        with self.assertRaises(ControlError) as caught:
+            control._home_directory("", "", False, lambda: Path("."))
+        self.assertEqual(caught.exception.code, "validation")
+
+        with (
+            patch.dict(
+                control.os.environ, {"HOME": "", "USERPROFILE": "/profile"}, clear=False
+            ),
+            patch.object(control.Path, "home", side_effect=unavailable),
+        ):
+            self.assertEqual(
+                control._directories("kohdalab-iv"),
+                [Path("/profile/.kohdalab/iv/run"), Path("/profile/.kohdalab/control"), Path("/profile/.kohdalab/run")],
+            )
+        with (
+            patch.dict(
+                control.os.environ, {"HOME": "", "USERPROFILE": ""}, clear=False
+            ),
+            patch.object(control.Path, "home", return_value=Path(".")),
+        ):
+            with self.assertRaises(ControlError) as caught:
+                control._directories("kohdalab-iv")
+        self.assertEqual(caught.exception.code, "validation")
+
     def test_app_owned_run_discovery_and_explicit_override(self):
         import os
         import kohdalab_control as control
@@ -121,6 +181,78 @@ class BoundaryTests(unittest.TestCase):
         self.assertEqual(cm.exception.code, "busy")
         self.assertEqual(captured[0]["method"], "control.status")
         self.assertEqual(captured[0]["control_protocol"], 1)
+
+    def test_exchange_accepts_a_response_fragmented_before_its_newline(self):
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        endpoint = self.endpoint(server.getsockname()[1])
+
+        def serve():
+            try:
+                peer, _ = server.accept()
+                with peer:
+                    request = json.loads(peer.makefile("rb").readline())
+                    response = json.dumps(
+                        {
+                            "control_protocol": 1,
+                            "ok": True,
+                            "request_id": request.get("request_id"),
+                            "result": {"received": True},
+                        }
+                    ).encode()
+                    peer.sendall(response[:7])
+                    peer.sendall(response[7:])
+                    peer.sendall(b"\n")
+            finally:
+                server.close()
+
+        thread = threading.Thread(target=serve)
+        thread.start()
+        self.assertEqual(
+            control._exchange(endpoint, "status", {"request_id": "fragmented"}, 1),
+            {"received": True},
+        )
+        thread.join(2)
+        self.assertFalse(thread.is_alive())
+
+    def test_exchange_preserves_unterminated_and_response_limit_errors(self):
+        class Peer:
+            def settimeout(self, _timeout):
+                pass
+
+            def sendall(self, _data):
+                pass
+
+            def recv(self, size):
+                return b"x" * size
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                pass
+
+        with patch("kohdalab_control.socket.create_connection", return_value=Peer()):
+            with self.assertRaises(ControlError) as caught:
+                control._exchange(
+                    self.endpoint(), "status", {"request_id": "limit"}, 1
+                )
+        self.assertEqual(caught.exception.code, "validation")
+
+        class IncompletePeer(Peer):
+            def recv(self, _size):
+                self.calls = getattr(self, "calls", 0) + 1
+                return b"{}" if self.calls == 1 else b""
+
+        with patch(
+            "kohdalab_control.socket.create_connection", return_value=IncompletePeer()
+        ):
+            with self.assertRaises(ControlError) as caught:
+                control._exchange(
+                    self.endpoint(), "status", {"request_id": "incomplete"}, 1
+                )
+        self.assertEqual(caught.exception.code, "transport")
 
     def test_invalid_wait_or_stop_timeout_has_no_side_effect(self):
         client = ControlClient(endpoint=self.endpoint())

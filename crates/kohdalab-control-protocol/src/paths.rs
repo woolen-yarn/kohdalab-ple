@@ -19,13 +19,15 @@ fn home_from(
     profile: Option<OsString>,
     windows: bool,
 ) -> Result<PathBuf, String> {
+    // An empty native variable must not hide a valid fallback.
+    let home = home.filter(|path| !path.is_empty());
+    let profile = profile.filter(|path| !path.is_empty());
     let selected = if windows {
         profile.or(home)
     } else {
         home.or(profile)
     };
     selected
-        .filter(|p| !p.is_empty())
         .map(PathBuf::from)
         .ok_or_else(|| "User home directory is unavailable".into())
 }
@@ -109,5 +111,22 @@ mod tests {
             PathBuf::from("windows")
         );
         assert!(home_from(None, None, false).is_err());
+    }
+
+    #[test]
+    fn empty_home_variables_use_the_nonempty_fallback_or_report_unavailable() {
+        for windows in [false, true] {
+            assert_eq!(
+                home_from(Some("".into()), Some("profile".into()), windows).unwrap(),
+                PathBuf::from("profile")
+            );
+            assert_eq!(
+                home_from(Some("home".into()), Some("".into()), windows).unwrap(),
+                PathBuf::from("home")
+            );
+            for (home, profile) in [(Some(""), Some("")), (None, Some("")), (Some(""), None)] {
+                assert!(home_from(home.map(Into::into), profile.map(Into::into), windows).is_err());
+            }
+        }
     }
 }

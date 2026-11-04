@@ -73,9 +73,29 @@ def _positive(value, name):
     return float(value)
 
 
+def _home_directory(home, profile, windows, fallback):
+    """Choose a nonempty native home variable, then a valid OS fallback."""
+    home = home or None
+    profile = profile or None
+    selected = (profile or home) if windows else (home or profile)
+    if selected is not None:
+        return Path(selected)
+    fallback = Path(fallback())
+    if not fallback.is_absolute():
+        raise ControlError(
+            "User home directory is unavailable", code="validation"
+        )
+    return fallback
+
+
 def _directories(application=None) -> list[Path]:
-    home = os.environ.get("USERPROFILE") if os.name == "nt" else os.environ.get("HOME")
-    root = (Path(home) if home else Path.home()) / ".kohdalab"
+    home = _home_directory(
+        os.environ.get("HOME"),
+        os.environ.get("USERPROFILE"),
+        os.name == "nt",
+        Path.home,
+    )
+    root = home / ".kohdalab"
     applications = ("iv", "trkr", "camera", "shutter", "ple")
     if application is not None:
         name = application.removeprefix("kohdalab-")
@@ -159,7 +179,8 @@ def _exchange(endpoint, method, payload, timeout):
             peer.settimeout(max(0.001, deadline - time.monotonic()))
             peer.sendall(encoded)
             chunks = bytearray()
-            while b"\n" not in chunks:
+            newline = -1
+            while newline < 0:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError("Control response timed out")
@@ -168,6 +189,7 @@ def _exchange(endpoint, method, payload, timeout):
                 if not part:
                     raise ConnectionError("Incomplete control response")
                 chunks.extend(part)
+                newline = part.find(b"\n")
                 if len(chunks) > MAX_RESPONSE:
                     raise ControlError(
                         "Response exceeds the common protocol limit",
