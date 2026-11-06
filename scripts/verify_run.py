@@ -42,8 +42,16 @@ def read_csv(path: Path, required: set[str]) -> list[dict[str, str]]:
         raise ValueError(f"cannot read {path}: {error}") from error
 
 
-def close(left: float, right: float, tolerance: float) -> bool:
-    return math.isclose(left, right, rel_tol=tolerance, abs_tol=tolerance)
+def same_observation(left: float, right: float) -> bool:
+    """Serialized observations must round-trip to the same IEEE-754 value."""
+    return left == right
+
+
+def close_arithmetic(left: float, right: float, tolerance: float) -> bool:
+    """Allow rounding in derived arithmetic, never an absolute physical floor."""
+    return math.isclose(left, right, rel_tol=tolerance, abs_tol=0.0) or math.isclose(
+        left, right, rel_tol=0.0, abs_tol=max(math.ulp(left), math.ulp(right)) * 8
+    )
 
 
 def nonnegative_integer(value: Any, label: str) -> int:
@@ -165,10 +173,20 @@ def verify(run: Path, tolerance: float) -> dict[str, Any]:
             raw_power = finite(acquisition.get("power_w"), f"{base} metadata power_w")
             if metadata_power <= 0 or raw_power <= 0:
                 raise ValueError(f"{base}: metadata powers must be positive")
-            if not close(metadata_actual, actual, tolerance):
+            point_raw_power = nonempty_point_value(point, "power_W")
+            if point_raw_power is not None and not same_observation(
+                finite(point_raw_power, f"point {identity} power_W"), raw_power
+            ):
+                raise ValueError(f"{base}: metadata power_w differs from points.csv")
+            if not same_observation(metadata_actual, actual):
                 raise ValueError(f"{base}: metadata actual_mm differs from points.csv")
-            if not close(metadata_power, power, tolerance):
+            if not same_observation(metadata_power, power):
                 raise ValueError(f"{base}: metadata sample_power_w differs from points.csv")
+            correction = config.get("power", {}).get("correction_factor") if isinstance(config.get("power"), dict) else None
+            if correction is not None:
+                factor = finite(correction, "settings power correction_factor")
+                if factor <= 0 or not close_arithmetic(metadata_power, raw_power * factor, tolerance):
+                    raise ValueError(f"{base}: sample_power_w does not match power_w × correction_factor")
             timestamps = [
                 optional_timestamp(acquisition, "power_timestamp_unix_s", base),
                 optional_timestamp(acquisition, "acquisition_started_unix_s", base),
@@ -182,8 +200,8 @@ def verify(run: Path, tolerance: float) -> dict[str, Any]:
                 timestamps,
             ):
                 point_time = nonempty_point_value(point, key)
-                if point_time is not None and metadata_time is not None and not close(
-                    finite(point_time, f"point {identity} {key}"), metadata_time, tolerance
+                if point_time is not None and metadata_time is not None and not same_observation(
+                    finite(point_time, f"point {identity} {key}"), metadata_time
                 ):
                     raise ValueError(f"{base}: {key} differs from points.csv")
             if spectrum.get("wavelength_nm") != raw_nm or spectrum.get("counts") != raw_counts:
@@ -199,16 +217,16 @@ def verify(run: Path, tolerance: float) -> dict[str, Any]:
                 values = {key: finite(row[key], f"{base} row {index} {key}") for key in row if key in {
                     "emission_nm", "emission_eV", "raw_counts", "background_counts", "corrected_counts", "corrected_counts_per_W",
                 }}
-                if not close(values["emission_nm"], raw_nm[index], tolerance):
+                if not same_observation(values["emission_nm"], raw_nm[index]):
                     raise ValueError(f"{base}: processed wavelength differs at bin {index}")
-                if not close(values["emission_eV"] * values["emission_nm"], HC_EV_NM, tolerance):
+                if not close_arithmetic(values["emission_eV"] * values["emission_nm"], HC_EV_NM, tolerance):
                     raise ValueError(f"{base}: energy conversion differs at bin {index}")
-                if not close(values["raw_counts"], raw_counts[index], tolerance) or not close(values["background_counts"], bg_counts[index], tolerance):
+                if not same_observation(values["raw_counts"], raw_counts[index]) or not same_observation(values["background_counts"], bg_counts[index]):
                     raise ValueError(f"{base}: raw/background differs at bin {index}")
                 expected = raw_counts[index] - bg_counts[index]
-                if not close(values["corrected_counts"], expected, tolerance) or not close(float(corrected[index]), expected, tolerance):
+                if not close_arithmetic(values["corrected_counts"], expected, tolerance) or not close_arithmetic(float(corrected[index]), expected, tolerance):
                     raise ValueError(f"{base}: BG subtraction differs at bin {index}")
-                if not close(values["corrected_counts_per_W"], expected / power, tolerance):
+                if not close_arithmetic(values["corrected_counts_per_W"], expected / power, tolerance):
                     raise ValueError(f"{base}: power normalization differs at bin {index}")
             if hardware:
                 require_nonempty_spe(run / "raw" / f"{base}.spe", f"raw/{base}.spe")
@@ -240,7 +258,7 @@ def verify(run: Path, tolerance: float) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run", type=Path, help="saved run directory containing settings.json")
-    parser.add_argument("--tolerance", type=float, default=1e-8, help="absolute/relative floating-point tolerance (default: 1e-8)")
+    parser.add_argument("--tolerance", type=float, default=1e-8, help="relative tolerance for derived arithmetic (default: 1e-8)")
     parser.add_argument("--json", action="store_true", help="emit the full JSON report")
     args = parser.parse_args(argv)
     if not math.isfinite(args.tolerance) or args.tolerance < 0:

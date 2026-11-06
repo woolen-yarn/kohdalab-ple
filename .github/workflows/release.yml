@@ -78,7 +78,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: woolen-yarn/kohdalab-shutter
-          ref: 8d22245899c36206622341ed5957919508aac0a1
+          ref: 7e8d1c953905ad92a49a07cd75b916c38a3a518d
           path: build/shutter-source
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable

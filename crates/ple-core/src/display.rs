@@ -266,6 +266,7 @@ mod tests {
             sample_power_w: 2.,
             power_timestamp_unix_s: 0.,
             power_sensor_wavelength_nm: None,
+            power_observation: serde_json::Value::Null,
             acquisition_started_unix_s: 0.,
             timestamp_unix_s: 0.,
             pl_peak_nm: Some(780.),

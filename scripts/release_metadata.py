@@ -38,7 +38,7 @@ def write_metadata(directory: Path, version: str, commit: str, run_url: str, *, 
         if companion_names:
             companion_name = companion_names[0]
             companion = json.loads(windows.read(companion_name).decode("utf-8-sig"))
-            if companion.get("commit") != "8d22245899c36206622341ed5957919508aac0a1" or companion.get("protocol") != 2:
+            if companion.get("commit") != "7e8d1c953905ad92a49a07cd75b916c38a3a518d" or companion.get("protocol") != 2:
                 raise ValueError("Shutter companion revision/protocol mismatch")
             prefix = companion_name.rsplit("/", 1)[0] + "/"
             for filename, key in (("kohdalab-shutter-gui.exe", "gui_sha256"), ("kohdalab-shutter.exe", "cli_sha256")):

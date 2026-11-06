@@ -46,7 +46,7 @@ class ReleasePackagingTests(unittest.TestCase):
                 members={name:contents.read(name) for name in contents.namelist()}
             prefix="package/companions/kohdalab-shutter/"
             companion_binary=b"companion-fixture"
-            companion={"commit":"8d22245899c36206622341ed5957919508aac0a1","protocol":2,"gui_sha256":hashlib.sha256(companion_binary).hexdigest(),"cli_sha256":hashlib.sha256(companion_binary).hexdigest()}
+            companion={"commit":"7e8d1c953905ad92a49a07cd75b916c38a3a518d","protocol":2,"gui_sha256":hashlib.sha256(companion_binary).hexdigest(),"cli_sha256":hashlib.sha256(companion_binary).hexdigest()}
             members.update({prefix+"companion-origin.json":json.dumps(companion).encode(),prefix+"kohdalab-shutter-gui.exe":companion_binary,prefix+"kohdalab-shutter.exe":companion_binary})
             for name in ("source.zip","LICENSE","Start-Shutter.cmd","third_party/rust/NOTICE.json"):members[prefix+name]=b"fixture"
             for program in ("gui","cli"):

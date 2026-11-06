@@ -7,6 +7,7 @@ channel: diagnostics must go to stderr only.
 from __future__ import annotations
 
 import csv
+import hashlib
 import importlib.util
 import json
 import logging
@@ -145,6 +146,14 @@ class Spectrometer(Protocol):
 
 
 class LightFieldSpectrometer:
+    REQUIRED_BACKGROUND_SETTINGS = frozenset({
+        "selected_regions", "adc_analog_gain", "adc_speed", "adc_quality", "adc_bit_depth",
+        "readout_control_mode", "sensor_temperature_setpoint", "online_cosmic_ray_enabled",
+        "online_cosmic_ray_method", "online_cosmic_ray_kernel_size", "online_flatfield_enabled",
+        "online_flatfield_reference_file", "online_blemish_enabled", "online_blemish_definition_file",
+        "online_orientation_enabled", "online_orientation_flip_horizontal",
+        "online_orientation_flip_vertical", "online_orientation_rotate_clockwise",
+    })
     """Thin, owned-instance wrapper around LightField AutomationV5."""
     def __init__(self) -> None:
         self.auto = self.experiment = self.file_manager = None
@@ -194,14 +203,100 @@ class LightFieldSpectrometer:
         except Exception as error:
             raise BridgeError(f"LightField could not read {setting}: {error}") from error
 
+    def _observed_setting(self, group: str, member: str) -> dict[str, Any]:
+        """Read one documented setting without mistaking absence for equality."""
+        try:
+            setting = getattr(self.api[group], member)
+        except (KeyError, AttributeError) as error:
+            return {"status": "unknown_sdk_member", "error": str(error)}
+        try:
+            if not self.experiment.Exists(setting):
+                return {"status": "unsupported"}
+            return {"status": "supported", "value": self._json_setting_value(self.experiment.GetValue(setting))}
+        except Exception as error:
+            return {"status": "unreadable", "error": str(error)}
+
+    @staticmethod
+    def _json_setting_value(value: Any) -> bool | int | float | str:
+        """Convert documented SDK scalar/enum results before JSON transport."""
+        if isinstance(value, bool): return value
+        if isinstance(value, int): return value
+        if isinstance(value, float):
+            if math.isfinite(value): return value
+            raise ValueError("non-finite numeric setting")
+        if isinstance(value, str): return value
+        to_string = getattr(value, "ToString", None)
+        if callable(to_string) and isinstance((result := to_string()), str): return result
+        raise TypeError(f"unsupported setting value type {type(value).__name__}")
+
+    def _selected_regions(self) -> dict[str, Any]:
+        try:
+            regions = [
+                {name: int(getattr(region, name)) for name in ("X", "Y", "Width", "Height", "XBinning", "YBinning")}
+                for region in self.experiment.SelectedRegions
+            ]
+            if not regions or any(region["X"] < 0 or region["Y"] < 0 or region["Width"] <= 0 or region["Height"] <= 0 or region["XBinning"] <= 0 or region["YBinning"] <= 0 for region in regions):
+                return {"status": "unqualified", "error": "SelectedRegions is empty or has invalid geometry/binning"}
+            return {"status": "supported", "value": regions}
+        except AttributeError as error:
+            return {"status": "unknown_sdk_member", "error": str(error)}
+        except Exception as error:
+            return {"status": "unreadable", "error": str(error)}
+
+    @staticmethod
+    def _reference_identity(observation: dict[str, Any]) -> dict[str, Any]:
+        if observation.get("status") != "supported" or not isinstance(observation.get("value"), str):
+            return {"status": "unqualified", "error": "reference setting is unavailable"}
+        path = Path(observation["value"])
+        try:
+            digest = hashlib.sha256()
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return {"status": "supported", "path": str(path), "sha256": digest.hexdigest()}
+        except OSError as error:
+            return {"status": "unqualified", "path": str(path), "error": str(error)}
+
     def _read_settings(self) -> dict[str, Any]:
         a = self.api
+        background_settings = {
+            "selected_regions": self._selected_regions(),
+            "adc_analog_gain": self._observed_setting("CameraSettings", "AdcAnalogGain"),
+            "adc_speed": self._observed_setting("CameraSettings", "AdcSpeed"),
+            "adc_quality": self._observed_setting("CameraSettings", "AdcQuality"),
+            "adc_bit_depth": self._observed_setting("CameraSettings", "AdcBitDepth"),
+            "readout_control_mode": self._observed_setting("CameraSettings", "ReadoutControlMode"),
+            "sensor_temperature_setpoint": self._observed_setting("CameraSettings", "SensorTemperatureSetPoint"),
+            "online_cosmic_ray_enabled": self._observed_setting("ExperimentSettings", "OnlineCorrectionsCosmicRayCorrectionEnabled"),
+            "online_cosmic_ray_method": self._observed_setting("ExperimentSettings", "OnlineCorrectionsCosmicRayCorrectionMethod"),
+            "online_cosmic_ray_kernel_size": self._observed_setting("ExperimentSettings", "OnlineCorrectionsCosmicRayCorrectionKernelSize"),
+            "online_flatfield_enabled": self._observed_setting("ExperimentSettings", "OnlineCorrectionsFlatfieldCorrectionEnabled"),
+            "online_flatfield_reference_file": self._observed_setting("ExperimentSettings", "OnlineCorrectionsFlatfieldCorrectionReferenceFile"),
+            "online_blemish_enabled": self._observed_setting("ExperimentSettings", "OnlineCorrectionsBlemishCorrectionEnabled"),
+            "online_blemish_definition_file": self._observed_setting("ExperimentSettings", "OnlineCorrectionsBlemishCorrectionDefinitionFile"),
+            "online_orientation_enabled": self._observed_setting("ExperimentSettings", "OnlineCorrectionsOrientationCorrectionEnabled"),
+            "online_orientation_flip_horizontal": self._observed_setting("ExperimentSettings", "OnlineCorrectionsOrientationCorrectionFlipHorizontally"),
+            "online_orientation_flip_vertical": self._observed_setting("ExperimentSettings", "OnlineCorrectionsOrientationCorrectionFlipVertically"),
+            "online_orientation_rotate_clockwise": self._observed_setting("ExperimentSettings", "OnlineCorrectionsOrientationCorrectionRotateClockwise"),
+        }
+        if background_settings["online_flatfield_enabled"].get("value") is True:
+            background_settings["online_flatfield_reference_identity"] = self._reference_identity(background_settings["online_flatfield_reference_file"])
+        if background_settings["online_blemish_enabled"].get("value") is True:
+            background_settings["online_blemish_definition_identity"] = self._reference_identity(background_settings["online_blemish_definition_file"])
         return {
             "exposure_ms": float(self._get(a["CameraSettings"].ShutterTimingExposureTime)),
             "frames_combined": int(self._get(a["ExperimentSettings"].FrameSettingsFramesCombined)),
             "center_nm": float(self._get(a["SpectrometerSettings"].GratingCenterWavelength)),
             "grating": str(self._get(a["SpectrometerSettings"].Grating)),
             "online_background_correction": bool(self._get(a["ExperimentSettings"].OnlineCorrectionsBackgroundCorrectionEnabled)),
+            "background_settings": background_settings,
+            # Temperature evolves during a run; record it but do not use the
+            # reading/status as a BG equality criterion.  The setpoint is kept
+            # separately so a saved run shows the intended condition.
+            "temperature": {
+                "reading": self._observed_setting("CameraSettings", "SensorTemperatureReading"),
+                "status": self._observed_setting("CameraSettings", "SensorTemperatureStatus"),
+            },
             "hardware": {"lightfield": self._hardware_inventory()},
         }
 
@@ -245,15 +340,31 @@ class LightFieldSpectrometer:
 
     @staticmethod
     def _same_settings(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
-        return (expected.get("online_background_correction") == actual.get("online_background_correction")
+        basic = (expected.get("online_background_correction") == actual.get("online_background_correction")
                 and expected["frames_combined"] == actual["frames_combined"]
                 and expected["grating"] == actual["grating"]
                 and math.isclose(expected["exposure_ms"], actual["exposure_ms"], rel_tol=0, abs_tol=1e-6)
                 and math.isclose(expected["center_nm"], actual["center_nm"], rel_tol=0, abs_tol=1e-6))
+        if not basic:
+            return False
+        expected_bg, actual_bg = expected.get("background_settings"), actual.get("background_settings")
+        if expected_bg is None or actual_bg is None:  # legacy/basic requested-setting comparison
+            return True
+        if not isinstance(expected_bg, dict) or not isinstance(actual_bg, dict):
+            return False
+        for value in (*expected_bg.values(), *actual_bg.values()):
+            if not isinstance(value, dict) or value.get("status") not in {"supported", "unsupported"}:
+                return False
+        return expected_bg == actual_bg
+
+    @staticmethod
+    def _same_runtime_settings(expected: dict[str, Any], actual: dict[str, Any]) -> bool:
+        snapshots = (expected.get("background_settings"), actual.get("background_settings"))
+        return all(isinstance(snapshot, dict) and LightFieldSpectrometer.REQUIRED_BACKGROUND_SETTINGS <= snapshot.keys() for snapshot in snapshots) and LightFieldSpectrometer._same_settings(expected, actual)
 
     def _assert_expected_settings(self) -> None:
         actual = self._read_settings()
-        if not self._same_settings(self.settings, actual):
+        if not self._same_runtime_settings(self.settings, actual):
             raise BridgeError(f"LightField settings changed after configuration; expected {self.settings}, read {actual}")
 
     def _exclusively_readable(self, paths: list[Path]) -> bool:

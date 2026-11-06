@@ -71,6 +71,14 @@ class FakeShutter:
 
 
 class BridgeTests(unittest.TestCase):
+    def test_correction_reference_identity_hashes_readable_bytes(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "flatfield.ref"
+            path.write_bytes(b"flatfield calibration")
+            identity = bridge.LightFieldSpectrometer._reference_identity({"status":"supported", "value":str(path)})
+        self.assertEqual(identity["status"], "supported")
+        self.assertEqual(identity["sha256"], "6e26463c30f412a42ece30d6f7a0cbc04448c169f32748de85ee320e5b2c98e4")
+
     def test_lightfield_inventory_records_devices_and_grating_choices(self):
         class Device:
             def __init__(self, kind, model, serial): self.Type, self.Model, self.SerialNumber = kind, model, serial
@@ -102,25 +110,69 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(spec._hardware_inventory()["grating_choices"], ["exact grating"])
 
     def test_lightfield_settings_nest_inventory_without_affecting_setting_comparison(self):
-        class Settings:
+        class CameraSettings:
             ShutterTimingExposureTime = "exposure"
+            AdcAnalogGain = "gain"; AdcSpeed = "speed"; AdcQuality = "quality"; AdcBitDepth = "depth"
+            ReadoutControlMode = "readout"; SensorTemperatureSetPoint = "temp_set"
+            SensorTemperatureReading = "temp_read"; SensorTemperatureStatus = "temp_status"
+        class ExperimentSettings:
             FrameSettingsFramesCombined = "frames"
-            GratingCenterWavelength = "center"
-            Grating = "grating"
             OnlineCorrectionsBackgroundCorrectionEnabled = "online_bg"
+            OnlineCorrectionsCosmicRayCorrectionEnabled = "cosmic_enabled"
+            OnlineCorrectionsCosmicRayCorrectionMethod = "cosmic_method"
+            OnlineCorrectionsCosmicRayCorrectionKernelSize = "cosmic_kernel"
+            OnlineCorrectionsFlatfieldCorrectionEnabled = "flatfield"
+            OnlineCorrectionsFlatfieldCorrectionReferenceFile = "flatfield_file"
+            OnlineCorrectionsBlemishCorrectionEnabled = "blemish"
+            OnlineCorrectionsBlemishCorrectionDefinitionFile = "blemish_file"
+            OnlineCorrectionsOrientationCorrectionEnabled = "orientation"
+            OnlineCorrectionsOrientationCorrectionFlipHorizontally = "flip_h"
+            OnlineCorrectionsOrientationCorrectionFlipVertically = "flip_v"
+            OnlineCorrectionsOrientationCorrectionRotateClockwise = "rotate"
+        class SpectrometerSettings:
+            GratingCenterWavelength = "center"; Grating = "grating"
         class Experiment:
             IsReadyToRun = True
-            values = {"online_bg": False, "exposure": 1., "frames": 1, "center": 700., "grating": "g"}
+            class EnumValue:
+                def ToString(self): return "low_noise"
+            values = {"online_bg": False, "exposure": 1., "frames": 1, "center": 700., "grating": "g", "gain":"low", "speed":100., "quality":EnumValue(), "depth":16, "readout":"full", "temp_set":-70., "temp_read":-69., "temp_status":"Locked", "cosmic_enabled":False, "cosmic_method":"median", "cosmic_kernel":3, "flatfield":False, "flatfield_file":"C:/references/flatfield.spe", "blemish":False, "blemish_file":"C:/references/blemish.xml", "orientation":False, "flip_h":False, "flip_v":False, "rotate":False}
             ExperimentDevices = []
+            class Region:
+                def __init__(self, x, y, width, height, xb, yb): self.X, self.Y, self.Width, self.Height, self.XBinning, self.YBinning = x, y, width, height, xb, yb
+            SelectedRegions = [Region(1, 2, 512, 1, 1, 2)]
             def Exists(self, _setting): return True
             def GetValue(self, setting): return self.values[setting]
             def GetCurrentCapabilities(self, _setting): return ["g"]
         spec = bridge.LightFieldSpectrometer()
         spec.experiment = Experiment()
-        spec.api = {"CameraSettings": Settings, "ExperimentSettings": Settings, "SpectrometerSettings": Settings}
+        spec.api = {"CameraSettings": CameraSettings, "ExperimentSettings": ExperimentSettings, "SpectrometerSettings": SpectrometerSettings}
         settings = spec._read_settings()
+        json.dumps(settings)
         self.assertEqual(settings["hardware"]["lightfield"]["grating_choices"], ["g"])
         self.assertTrue(bridge.LightFieldSpectrometer._same_settings(settings, dict(settings)))
+        self.assertTrue(bridge.LightFieldSpectrometer._same_runtime_settings(settings, dict(settings)))
+        incomplete = json.loads(json.dumps(settings)); del incomplete["background_settings"]["adc_speed"]
+        self.assertFalse(bridge.LightFieldSpectrometer._same_runtime_settings(settings, incomplete))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["adc_analog_gain"]["value"] = "high"
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["selected_regions"]["value"][0]["YBinning"] = 1
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["readout_control_mode"]["value"] = "kinetics"
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        changed = json.loads(json.dumps(settings)); changed["temperature"]["reading"]["value"] = -60.
+        self.assertTrue(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["sensor_temperature_setpoint"]["value"] = -60.
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["adc_speed"] = {"status":"unknown_sdk_member"}
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(settings, changed))
+        unsupported = json.loads(json.dumps(settings))
+        unsupported["background_settings"]["adc_speed"] = {"status":"unsupported"}
+        self.assertTrue(bridge.LightFieldSpectrometer._same_settings(unsupported, json.loads(json.dumps(unsupported))))
+        changed = json.loads(json.dumps(settings)); changed["background_settings"]["online_flatfield_enabled"]["value"] = True
+        changed["background_settings"]["online_flatfield_reference_identity"] = {"status":"unqualified"}
+        self.assertFalse(bridge.LightFieldSpectrometer._same_settings(changed, changed))
+        spec.experiment.SelectedRegions = []
+        self.assertEqual(spec._selected_regions()["status"], "unqualified")
 
     def test_power_inventory_records_meter_and_sensor_without_fabricating_no_sensor(self):
         meter = FakeLegacyMeter(minimum_nm=400., maximum_nm=1100.)

@@ -56,8 +56,8 @@ class VerifyRunTests(unittest.TestCase):
             "corrected_counts": corrected,
         }
         (run / "metadata" / f"{base}.json").write_text(json.dumps(acquisition))
-        self._write_csv(run / "points.csv", ["point_index", "repeat_index", "actual_mm", "sample_power_W", "spectrum_base", "power_timestamp_unix_s", "acquisition_started_unix_s", "acquisition_completed_unix_s"],
-                        [{"point_index": 0, "repeat_index": 0, "actual_mm": 18.0, "sample_power_W": power, "spectrum_base": base,
+        self._write_csv(run / "points.csv", ["point_index", "repeat_index", "actual_mm", "power_W", "sample_power_W", "spectrum_base", "power_timestamp_unix_s", "acquisition_started_unix_s", "acquisition_completed_unix_s"],
+                        [{"point_index": 0, "repeat_index": 0, "actual_mm": 18.0, "power_W": power, "sample_power_W": power, "spectrum_base": base,
                           "power_timestamp_unix_s": 10.0, "acquisition_started_unix_s": 11.0, "acquisition_completed_unix_s": 12.0}])
         (run / "status.json").write_text(json.dumps({"state": "completed", "completed_acquisitions": 1, "planned_acquisitions": 1}))
         return run
@@ -101,6 +101,48 @@ class VerifyRunTests(unittest.TestCase):
         report = verify_run.verify(run, 1e-8)
         self.assertFalse(report["ok"])
         self.assertTrue(any("BG subtraction" in error for error in report["errors"]), report)
+
+    def test_small_power_uses_relative_arithmetic_without_absolute_watt_floor(self) -> None:
+        run = self._run_fixture()
+        base = "point_00000_repeat_000"
+        power = 1e-12
+        acquisition = json.loads((run / "metadata" / f"{base}.json").read_text())
+        acquisition["power_w"] = power
+        acquisition["sample_power_w"] = power
+        (run / "metadata" / f"{base}.json").write_text(json.dumps(acquisition))
+        with (run / "points.csv").open(newline="", encoding="utf-8") as handle:
+            points = list(csv.DictReader(handle))
+        points[0]["power_W"] = str(power)
+        points[0]["sample_power_W"] = str(power)
+        self._write_csv(run / "points.csv", list(points[0]), points)
+        processed = run / "processed" / f"{base}.csv"
+        with processed.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        for row in rows:
+            row["corrected_counts_per_W"] = str(float(row["corrected_counts"]) / power)
+        self._write_csv(processed, list(rows[0]), rows)
+        report = verify_run.verify(run, 1e-8)
+        self.assertTrue(report["ok"], report)
+
+    def test_epoch_timestamp_identity_rejects_ten_second_difference(self) -> None:
+        run = self._run_fixture()
+        with (run / "points.csv").open(newline="", encoding="utf-8") as handle:
+            points = list(csv.DictReader(handle))
+        points[0]["acquisition_completed_unix_s"] = "22.0"
+        self._write_csv(run / "points.csv", list(points[0]), points)
+        report = verify_run.verify(run, 1e-8)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("acquisition_completed_unix_s differs" in error for error in report["errors"]), report)
+
+    def test_raw_power_observation_identity_rejects_two_picowatt_substitution(self) -> None:
+        run = self._run_fixture()
+        with (run / "points.csv").open(newline="", encoding="utf-8") as handle:
+            points = list(csv.DictReader(handle))
+        points[0]["power_W"] = "2e-12"
+        self._write_csv(run / "points.csv", list(points[0]), points)
+        report = verify_run.verify(run, 1e-8)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("metadata power_w differs" in error for error in report["errors"]), report)
 
     def test_hardware_fixture_requires_background_and_signal_spe(self) -> None:
         report = verify_run.verify(self._run_fixture(hardware=True), 1e-8)

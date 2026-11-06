@@ -609,6 +609,9 @@ pub struct Sample {
     pub power_timestamp_unix_s: f64,
     #[serde(default)]
     pub power_sensor_wavelength_nm: Option<f64>,
+    /// Bridge-native observation retained alongside the normalized W value.
+    #[serde(default)]
+    pub power_observation: serde_json::Value,
     pub acquisition_started_unix_s: f64,
     pub timestamp_unix_s: f64,
     pub pl_peak_nm: Option<f64>,
@@ -628,6 +631,9 @@ pub struct Acquisition {
     pub power_timestamp_unix_s: f64,
     #[serde(default)]
     pub power_sensor_wavelength_nm: Option<f64>,
+    /// Original meter value/unit and readback context.  Missing in legacy runs.
+    #[serde(default)]
+    pub power_observation: serde_json::Value,
     pub acquisition_started_unix_s: f64,
     pub timestamp_unix_s: f64,
     pub spectrum: Spectrum,
@@ -693,6 +699,7 @@ impl Acquisition {
             sample_power_w: self.sample_power_w,
             power_timestamp_unix_s: self.power_timestamp_unix_s,
             power_sensor_wavelength_nm: self.power_sensor_wavelength_nm,
+            power_observation: self.power_observation,
             acquisition_started_unix_s: self.acquisition_started_unix_s,
             timestamp_unix_s: self.timestamp_unix_s,
             pl_peak_nm: peak,

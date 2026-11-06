@@ -165,7 +165,7 @@ impl Recording {
                 "acquisition_{:05}_{:03}.json",
                 a.point_index, a.repeat_index
             )),
-            &json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index,"target_mm":a.target_mm,"actual_mm":a.actual_mm,"power_w":a.power_w,"sample_power_w":a.sample_power_w,"power_sensor_wavelength_nm":a.power_sensor_wavelength_nm,"power_timestamp_unix_s":a.power_timestamp_unix_s,"acquisition_started_unix_s":a.acquisition_started_unix_s,"timestamp_unix_s":a.timestamp_unix_s,"spe_path":a.spectrum.spe_path,"settings":a.spectrum.settings,"background":"metadata/background.json"}),
+            &json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index,"target_mm":a.target_mm,"actual_mm":a.actual_mm,"power_w":a.power_w,"sample_power_w":a.sample_power_w,"power_sensor_wavelength_nm":a.power_sensor_wavelength_nm,"power_observation":a.power_observation,"power_timestamp_unix_s":a.power_timestamp_unix_s,"acquisition_started_unix_s":a.acquisition_started_unix_s,"timestamp_unix_s":a.timestamp_unix_s,"spe_path":a.spectrum.spe_path,"settings":a.spectrum.settings,"background":"metadata/background.json"}),
         )?;
         self.event("raw_acquired",json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index}))
     }
@@ -418,6 +418,7 @@ mod tests {
             sample_power_w: 1e-6,
             power_timestamp_unix_s: 1.,
             power_sensor_wavelength_nm: None,
+            power_observation: serde_json::Value::Null,
             acquisition_started_unix_s: 2.,
             timestamp_unix_s: 3.,
             pl_peak_nm: Some(800.),
