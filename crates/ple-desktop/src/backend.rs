@@ -920,7 +920,37 @@ fn parse_finite(s: &str) -> Result<f64, String> {
         Err("Non-finite device readback".into())
     }
 }
-type PowerReading = (f64, f64, f64, Value);
+type PowerReading = (f64, f64, f64, Value, Value);
+fn native_power_observation(
+    reply: &Value,
+    converted_w: f64,
+    wavelength_nm: f64,
+) -> Result<Value, String> {
+    let native_value = reply
+        .get("native_value")
+        .and_then(Value::as_f64)
+        .filter(|value| value.is_finite())
+        .ok_or("Power read did not contain a finite native_value")?;
+    let native_unit = reply
+        .get("native_unit")
+        .and_then(Value::as_str)
+        .ok_or("Power read did not contain native_unit")?;
+    let expected_w = match native_unit {
+        "W" => native_value,
+        "dBm" => 1e-3 * 10_f64.powf(native_value / 10.),
+        _ => return Err(format!("Unsupported native power unit {native_unit:?}")),
+    };
+    if !expected_w.is_finite()
+        || !converted_w.is_finite()
+        || (expected_w != converted_w
+            && (expected_w - converted_w).abs() > expected_w.abs() * 1e-12)
+    {
+        return Err("Power read converted W disagrees with native observation".into());
+    }
+    Ok(
+        json!({"native_value":native_value,"native_unit":native_unit,"converted_w":converted_w,"wavelength_nm":wavelength_nm,"hardware":reply.get("hardware")}),
+    )
+}
 pub enum PowerCommand {
     Connect(Box<Config>, mpsc::Sender<Result<(), String>>),
     Disconnect,
@@ -976,11 +1006,12 @@ impl PowerClient {
                             .as_mut()
                             .ok_or("Power meter not connected".into())
                             .and_then(|p| {
-                                p.read_at(wavelength)
-                                    .map(|(w, t, nm)| (w, t, nm, p.hardware.clone()))
+                                p.read_at(wavelength).map(|(w, t, nm, observation)| {
+                                    (w, t, nm, p.hardware.clone(), observation)
+                                })
                             });
                         match &result {
-                            Ok((value, timestamp, actual, _)) => {
+                            Ok((value, timestamp, actual, _, _)) => {
                                 let _ = events.send(Event::PowerWavelength(*actual));
                                 let _ = events.send(Event::Telemetry {
                                     device: "power",
@@ -1004,10 +1035,11 @@ impl PowerClient {
                             .as_mut()
                             .ok_or("Power meter not connected".into())
                             .and_then(|p| {
-                                p.read()
-                                    .map(|(w, t)| (w, t, p.wavelength_nm, p.hardware.clone()))
+                                p.read().map(|(w, t, observation)| {
+                                    (w, t, p.wavelength_nm, p.hardware.clone(), observation)
+                                })
                             });
-                        if let Ok((value, timestamp, actual, _)) = &result {
+                        if let Ok((value, timestamp, actual, _, _)) = &result {
                             let _ = events.send(Event::PowerWavelength(*actual));
                             let _ = events.send(Event::Telemetry {
                                 device: "power",
@@ -1033,7 +1065,7 @@ impl PowerClient {
                     Err(mpsc::RecvTimeoutError::Timeout) => {
                         if let Some(p) = &mut power {
                             match p.read() {
-                                Ok((w, timestamp)) => {
+                                Ok((w, timestamp, _)) => {
                                     let _ = events.send(Event::Telemetry {
                                         device: "power",
                                         value: w,
@@ -1156,7 +1188,7 @@ impl Power {
             start: Instant::now(),
         })
     }
-    fn read_at(&mut self, wavelength: f64) -> Result<(f64, f64, f64), String> {
+    fn read_at(&mut self, wavelength: f64) -> Result<(f64, f64, f64, Value), String> {
         let actual = if let Some(rpc) = &self.rpc {
             let r = rpc.request(
                 "power_set_wavelength",
@@ -1173,11 +1205,11 @@ impl Power {
             return Err("Power sensor rejected the requested wavelength".into());
         }
         self.wavelength_nm = actual;
-        let (value, time) = self.read()?;
-        Ok((value, time, actual))
+        let (value, time, observation) = self.read()?;
+        Ok((value, time, actual, observation))
     }
-    fn read(&mut self) -> Result<(f64, f64), String> {
-        let value = if let Some(rpc) = &self.rpc {
+    fn read(&mut self) -> Result<(f64, f64, Value), String> {
+        let (value, observation) = if let Some(rpc) = &self.rpc {
             let r = rpc.request("power_read", json!({}), Duration::from_secs(15))?;
             if let Some(hardware) = r.get("hardware")
                 && *hardware != self.hardware
@@ -1193,16 +1225,21 @@ impl Power {
             if !readback.is_finite() || (readback - self.wavelength_nm).abs() > 1e-6 {
                 return Err("Power sensor wavelength changed outside the application".into());
             }
-            r["power_w"]
+            let value = r["power_w"]
                 .as_f64()
-                .ok_or("Power read did not contain power_w")?
+                .ok_or("Power read did not contain power_w")?;
+            (value, native_power_observation(&r, value, readback)?)
         } else {
-            20e-6 * (1. + 0.02 * (self.start.elapsed().as_secs_f64() * 0.4).sin())
+            let value = 20e-6 * (1. + 0.02 * (self.start.elapsed().as_secs_f64() * 0.4).sin());
+            (
+                value,
+                json!({"native_value":value,"native_unit":"W","converted_w":value,"wavelength_nm":self.wavelength_nm,"source":"simulated"}),
+            )
         };
         if !value.is_finite() {
             return Err("Non-finite power reading".into());
         }
-        Ok((value, ple_core::recording::unix_s()))
+        Ok((value, ple_core::recording::unix_s(), observation))
     }
 }
 
@@ -1476,12 +1513,28 @@ mod tests {
         server.join().unwrap();
     }
     #[test]
+    fn native_power_provenance_requires_finite_known_unit_and_consistent_conversion() {
+        let valid = json!({"native_value": -30., "native_unit":"dBm", "hardware":{}});
+        assert!(native_power_observation(&valid, 1e-6, 700.).is_ok());
+        for invalid in [
+            json!({"native_unit":"W"}),
+            json!({"native_value":"1e-6","native_unit":"W"}),
+            json!({"native_value":1e-6,"native_unit":"mW"}),
+        ] {
+            assert!(native_power_observation(&invalid, 1e-6, 700.).is_err());
+        }
+        assert!(
+            native_power_observation(&json!({"native_value":1e-6,"native_unit":"W"}), 2e-6, 700.)
+                .is_err()
+        );
+    }
+    #[test]
     fn explicit_power_reads_update_live_trace_and_connection_state() {
         let (tx, rx) = mpsc::channel();
         let power = PowerClient::spawn(tx);
         power.connect(Config::default()).unwrap();
         assert!(power.is_connected());
-        let (w, _, _, _) = power.read_with_wavelength().unwrap();
+        let (w, _, _, _, _) = power.read_with_wavelength().unwrap();
         assert!(w > 0.);
         let inventory = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         assert!(matches!(inventory, Event::PowerHardware(v) if v["source"] == "simulated"));

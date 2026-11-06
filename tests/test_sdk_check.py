@@ -65,10 +65,10 @@ class SdkCheckTests(unittest.TestCase):
             (root / "AddInViews").mkdir()
             requested = []
             class Static:
-                ShutterTimingExposureTime = FrameSettingsFramesCombined = "setting"
-                FileNameGenerationDirectory = FileNameGenerationBaseFileName = OnlineCorrectionsBackgroundCorrectionEnabled = "setting"
-                FileNameGenerationAttachIncrement = FileNameGenerationAttachDate = FileNameGenerationAttachTime = "setting"
-                GratingCenterWavelength = Grating = Csv = "setting"
+                pass
+            for members in sdk_check.REQUIRED_LIGHTFIELD_MEMBERS.values():
+                for member in members:
+                    setattr(Static, member, "setting")
             def loader(path: Path):
                 requested.append(path)
                 return {name: Static for name in sdk_check.REQUIRED_LIGHTFIELD_MEMBERS}

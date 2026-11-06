@@ -12,6 +12,7 @@ LightField・リモートCONEX CC・パワーメーターを組み合わせた�
 - BG → first PL → peak/integration selection → scan. / BG取得・最初のPL確認・解析区間選択・走査の順に進行。
 - Live device traces, spectra, overlays, wavelength calibration and Inferno heatmap. / 機器ライブ表示・スペクトル・代表曲線・波長回帰・ヒートマップ。
 - Automatically record connected camera, grating and power-sensor information exposed by the SDK. / SDKが返すカメラ・グレーティング・パワーセンサーの情報を自動取得・記録。
+- Save raw SPE/arrays plus native power value/unit, converted W, wavelength and timing for each acquisition; BG matching includes ROI/binning, ADC/readout and correction provenance. / 各取得で生SPE・配列、ネイティブ電力値・単位、換算W、波長、時刻を保存し、BG照合にはROI・binning・ADC・読出し・補正条件を含めます。
 - Rust measurement/analysis/storage engine, with an optional Python/Jupyter GUI client. / 測定・解析・保存はRust、Python/Jupyterからの外部操作にも対応。
 
 ## Interface / 画面
@@ -56,6 +57,28 @@ Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D*
 4. Acquire BG and the first PL, choose peak/integration bounds, then continue. / BG・最初のPLを取得してピークと積分区間を決め、Continueで測定します。
 
 [Full user guide / 詳しい操作](docs/guides/user-guide.md) · [Physical qualification / 実機確認](docs/guides/hardware-qualification.md) · [Python client / Pythonクライアント](bindings/python/README.md)
+
+## Saved data / 保存仕様
+
+Keep the complete run directory together; `points.csv` alone cannot reproduce the acquisition.
+
+測定フォルダー全体を一緒に保管してください。`points.csv`だけでは取得条件を再現できません。
+
+| File / ファイル | Contents / 内容 |
+| --- | --- |
+| `points.csv` | Analysis summary per point/repeat: target/actual mm, excitation, power, peak/integral, timestamps and spectrum link. / 点・繰り返しごとの指令／実位置、励起波長、パワー、ピーク・積分、時刻、スペクトル対応。 |
+| `processed/*.csv` | Emission nm/eV, raw/BG/subtracted counts and counts/W. Negative differences are retained. / 発光nm/eV、生／BG／差引counts、counts/W。負の差も保持。 |
+| `raw/*.csv`, vendor `.spe` / `.lightfield.csv` | Numeric wavelength/count arrays and immutable vendor outputs; Demo does not create synthetic SPE. / 波長・counts配列と取得時のベンダー出力。Demoは偽のSPEを作りません。 |
+| `metadata/*.json` | Acquisition/BG linkage, native power value/unit, converted W, sensor wavelength, host times and observed LightField settings. / 取得とBGの対応、ネイティブ電力・単位、換算W、センサー波長、ホスト時刻、LightField読戻し条件。 |
+| `settings.json`, `accepted_settings.json`, `analysis.json`, `events.jsonl`, `status*.json` | Initial plan/version, accepted analysis conditions, operation history and completion/failure state. / 初期計画・版、確定した解析条件、操作履歴、完了／失敗状態。 |
+
+Numeric CSV values preserve finite floating-point round trips; decimal length is not instrument accuracy. The verifier compares duplicated observations exactly, including pW signals and UTC epoch times. Derived arithmetic has a relative/ULP tolerance, never a shared absolute watt threshold. Power is sampled before exposure, not averaged over exposure. Host times are not detector exposure timestamps.
+
+数値CSVは有限浮動小数点値の往復精度を保持し、桁数を装置の確度とみなしません。検証ツールはpW信号やUTC時刻を含む同一観測の転記値を厳密照合し、計算結果だけ相対／ULP許容差で検証します。共通の絶対W閾値で微小信号を見逃しません。パワーは露光前の測定で、露光中平均ではありません。ホスト時刻も検出器の露光時刻ではありません。
+
+Current hardware runs require qualified ROI/binning, ADC gain/readout, temperature setpoint and online-correction settings for BG matching. Enabled flatfield/blemish corrections retain reference-file hashes; volatile temperature readings/status are recorded separately. Unknown critical settings block normalization. Raw acquisitions already received remain saved on a later mismatch. Legacy saved runs remain readable without fabricating missing provenance. See [measurement specification](docs/reference/measurement.md).
+
+実機のBG照合にはROI・binning・ADC gain／読出し・温度設定値・オンライン補正の確認を要求します。有効なflatfield／blemish補正は参照ファイルのハッシュも記録し、変動する実温度・statusは別観測とします。重要条件が不明なら正規化せず、取得済み生データは照合失敗時も保持します。旧保存データは読めますが、欠けた情報を捏造しません。[測定仕様](docs/reference/measurement.md)も参照してください。
 
 ## Development / 開発
 

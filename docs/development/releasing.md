@@ -51,7 +51,7 @@ TRKR/IVと同様に、具体的な版のReleaseへZIPとSHA-256をまとめま�
 
 ## Shutter companion / 同梱シャッターGUI
 
-Windows CI checks out `woolen-yarn/kohdalab-shutter` at `8d22245899c36206622341ed5957919508aac0a1` under `build/shutter-source`. `--shutter-source build/shutter-source` builds its GUI/CLI with the same static-CRT option, checks imports/CLI help, retains matching source/MIT/Cargo licenses, and stages it under `companions/kohdalab-shutter`. Release metadata requires the companion and verifies its revision/protocol/exe hashes before publishing. No upstream files or firmware are modified. Local custom builds without `--shutter-source` use a separately installed compatible shutter GUI.
+Windows CI checks out `woolen-yarn/kohdalab-shutter` at `7e8d1c953905ad92a49a07cd75b916c38a3a518d` under `build/shutter-source`. `--shutter-source build/shutter-source` builds its GUI/CLI with the same static-CRT option, checks imports/CLI help, retains matching source/MIT/Cargo licenses, and stages it under `companions/kohdalab-shutter`. Release metadata requires the companion and verifies its revision/protocol/exe hashes before publishing. No upstream files or firmware are modified. Local custom builds without `--shutter-source` use a separately installed compatible shutter GUI.
 
 ## Windows Setup
 

@@ -5,7 +5,7 @@ $ErrorActionPreference = "Stop"
 $source = (Resolve-Path -LiteralPath $SourceDirectory).Path
 $destinationPath = [System.IO.Path]::GetFullPath($Destination)
 $projectRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
-$expected = "8d22245899c36206622341ed5957919508aac0a1"
+$expected = "7e8d1c953905ad92a49a07cd75b916c38a3a518d"
 Push-Location $source
 try {
     $revision = (& git rev-parse HEAD | Out-String).Trim()

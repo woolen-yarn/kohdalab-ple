@@ -31,7 +31,9 @@ Raw SPEとLightFieldのエクスポートは取得時のまま保持する。共
 
 ## 保存の確定と障害
 
-取得ごとにraw CSV、処理CSV、取得別JSON、points.csvを保存してから保存完了イベントを記録する。配列・points.csvはflushとsyncを行う。settings.jsonは開始時の設定を保持する。解析確認段階だけPLピーク・積分区間・励起波長の判定条件を変更でき、accepted_settings.jsonとanalysis.jsonへ確定条件を記録する。露光・走査・パワー条件は変更できない。再読込はaccepted_settings.jsonを優先する。ファイルが保存できなければ次の取得へ進まない。既存ファイルへの取得再実行は行わない。
+取得ごとにraw CSV、処理CSV、取得別JSON、points.csvを保存してから保存完了イベントを記録する。取得別JSONと開始イベントには、換算した`power_w`に加えて、メーターが返した`native_value`/`native_unit`、`converted_w`、波長読出し、時刻、ハードウェア読出しを`power_observation`として残す。これは元の単位値を失わず、W換算の再現性を確認するためである。配列・points.csvはflushとsyncを行う。settings.jsonは開始時の設定を保持する。解析確認段階だけPLピーク・積分区間・励起波長の判定条件を変更でき、accepted_settings.jsonとanalysis.jsonへ確定条件を記録する。露光・走査・パワー条件は変更できない。再読込はaccepted_settings.jsonを優先する。ファイルが保存できなければ次の取得へ進まない。既存ファイルへの取得再実行は行わない。
+
+LightField設定スナップショットは、BGと厳密照合する露光、合成フレーム、中心波長、グレーティング、online BG補正に加え、順序を保持したROI（X/Y binningを含む）、ADC gain/speed/quality/bit depth、readout control mode、文書化済みonline correctionを`background_settings`として保存する。実験が明示的にunsupportedと返す設定はその状態を保存するが、SDKメンバー不明または読出し不能は一致とは扱わずBG照合を失敗させる。温度setpointは安定したBG照合条件として保存し、変動する読出し値/statusは別の観測としてBG同一性の条件にしない。生SPEと生配列は、照合失敗時も拒否前に保存する。
 
 status.jsonは一時ファイルを同期後、直前版をstatus.previous.jsonへ移して更新する。両rename間に異常終了した場合はprevious側から直前状態を確認できる。OSやストレージ故障に対する完全なトランザクションではない。events.jsonl、points.csv、metadataを照合できるように残す。
 

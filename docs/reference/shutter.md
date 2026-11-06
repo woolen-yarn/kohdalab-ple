@@ -2,7 +2,7 @@
 
 PLEの測定エンジンがBGの取得順序を管理し、[kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter)がPico接続を所有します。PLEはRustから同じPC上のshutter GUI APIへ接続します。PicoへのTCP接続やUDP探索を二重に開きません。
 
-対応契約は[shutter GUI API protocol 2](https://github.com/woolen-yarn/kohdalab-shutter/blob/8d22245899c36206622341ed5957919508aac0a1/docs/gui-api.md)です。任意の旧シャッターサーバーを互換とみなしません。
+対応契約は[shutter GUI API protocol 2](https://github.com/woolen-yarn/kohdalab-shutter/blob/7e8d1c953905ad92a49a07cd75b916c38a3a518d/docs/gui-api.md)です。任意の旧シャッターサーバーを互換とみなしません。
 
 ## 準備
 
@@ -69,4 +69,4 @@ with GuiClient() as ple:  # 開いているPLE GUIへ接続
 
 ## 同梱版の出所
 
-Windows Releaseには、公開upstreamの固定commit `8d22245899c36206622341ed5957919508aac0a1`（package 0.4.1）からビルドしたGUI／CLIを同梱します。`companions/kohdalab-shutter/companion-origin.json`、対応する`source.zip`、MIT本文、Cargo依存ライセンスを保持します。GUIの起動用スクリプトは`--gui-api`を指定するだけで、Picoへのfirmware転送は行いません。同梱版のGUI実行にRustやPythonは不要です。
+Windows Releaseには、公開upstreamの固定commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d`（package 0.6.6）からビルドしたGUI／CLIを同梱します。`companions/kohdalab-shutter/companion-origin.json`、対応する`source.zip`、MIT本文、Cargo依存ライセンスを保持します。GUIの起動用スクリプトは`--gui-api`を指定するだけで、Picoへのfirmware転送は行いません。同梱版のGUI実行にRustやPythonは不要です。

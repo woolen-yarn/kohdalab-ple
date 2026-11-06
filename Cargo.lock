@@ -1124,7 +1124,7 @@ dependencies = [
 
 [[package]]
 name = "kohdalab-ple"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "eframe",
  "egui_plot",
@@ -1723,7 +1723,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "ple-core"
-version = "0.3.8"
+version = "0.3.9"
 dependencies = [
  "csv",
  "serde",

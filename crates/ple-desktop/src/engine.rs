@@ -765,7 +765,7 @@ fn acquire_point(
     bg: &Spectrum,
 ) -> Result<Acquisition, String> {
     check_stop(stop)?;
-    let (power_w, power_time, sensor_wavelength, power_hardware) =
+    let (power_w, power_time, sensor_wavelength, power_hardware, power_observation) =
         if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration {
             let predicted = ple_core::interpolate_excitation(&plan.excitation_anchors, actual)?;
             power.read_at(predicted)?
@@ -784,7 +784,7 @@ fn acquire_point(
         index + 1,
         repeat + 1
     )));
-    recording.event("acquisition_started",json!({"file_base":file_base,"point_index":index,"repeat_index":repeat,"power_w":power_w,"power_timestamp_unix_s":power_time,"power_hardware":power_hardware}))?;
+    recording.event("acquisition_started",json!({"file_base":file_base,"point_index":index,"repeat_index":repeat,"power_w":power_w,"power_timestamp_unix_s":power_time,"power_hardware":power_hardware,"power_observation":power_observation}))?;
     let spectrum = spec.acquire(&recording.base_path(&file_base), false, actual)?;
     let mut acquired = Acquisition {
         file_base,
@@ -796,6 +796,7 @@ fn acquire_point(
         sample_power_w,
         power_timestamp_unix_s: power_time,
         power_sensor_wavelength_nm: Some(sensor_wavelength),
+        power_observation,
         acquisition_started_unix_s: started,
         timestamp_unix_s: unix_s(),
         spectrum,
@@ -817,6 +818,66 @@ fn acquire_point(
 }
 
 fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    // A current bridge must provide a read-only setting snapshot.  Critical
+    // fields may be explicitly unsupported, but an unknown SDK member or an
+    // unreadable value is never evidence that BG and signal were the same.
+    const REQUIRED_BACKGROUND_FIELDS: &[&str] = &[
+        "selected_regions",
+        "adc_analog_gain",
+        "adc_speed",
+        "adc_quality",
+        "adc_bit_depth",
+        "readout_control_mode",
+        "sensor_temperature_setpoint",
+        "online_cosmic_ray_enabled",
+        "online_cosmic_ray_method",
+        "online_cosmic_ray_kernel_size",
+        "online_flatfield_enabled",
+        "online_flatfield_reference_file",
+        "online_blemish_enabled",
+        "online_blemish_definition_file",
+        "online_orientation_enabled",
+        "online_orientation_flip_horizontal",
+        "online_orientation_flip_vertical",
+        "online_orientation_rotate_clockwise",
+    ];
+    let valid_background_snapshot = |value: &serde_json::Value| {
+        let Some(settings) = value.get("background_settings") else {
+            return value["demo"].as_bool() == Some(true);
+        };
+        settings.as_object().is_some_and(|fields| {
+            REQUIRED_BACKGROUND_FIELDS
+                .iter()
+                .all(|key| fields.contains_key(*key))
+                && fields.values().all(|field| {
+                    matches!(
+                        field.get("status").and_then(|v| v.as_str()),
+                        Some("supported" | "unsupported")
+                    )
+                })
+                && (!fields["online_flatfield_enabled"]
+                    .get("value")
+                    .is_some_and(|v| v == true)
+                    || matches!(
+                        fields
+                            .get("online_flatfield_reference_identity")
+                            .and_then(|v| v.get("status").and_then(|s| s.as_str())),
+                        Some("supported")
+                    ))
+                && (!fields["online_blemish_enabled"]
+                    .get("value")
+                    .is_some_and(|v| v == true)
+                    || matches!(
+                        fields
+                            .get("online_blemish_definition_identity")
+                            .and_then(|v| v.get("status").and_then(|s| s.as_str())),
+                        Some("supported")
+                    ))
+        })
+    };
+    if !valid_background_snapshot(a) || !valid_background_snapshot(b) {
+        return false;
+    }
     if let (Some(old), Some(new)) = (
         a.pointer("/hardware/lightfield/devices")
             .and_then(|v| v.as_array()),
@@ -859,6 +920,10 @@ fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -
         let mut v = v.clone();
         if let Some(object) = v.as_object_mut() {
             object.remove("hardware");
+            // Sensor readings and stabilization status are observations, not
+            // stable BG identity.  The temperature setpoint is in
+            // background_settings and therefore remains compared.
+            object.remove("temperature");
         }
         v
     };
@@ -870,7 +935,7 @@ mod tests {
     use super::*;
     #[test]
     fn optional_inventory_does_not_hide_changed_settings_or_camera() {
-        let base = json!({"exposure_ms":10.,"grating":"g","hardware":{"lightfield":{"devices":[{"type":"Camera","model":"A","serial_number":"1"}]}}});
+        let base = json!({"demo":true,"exposure_ms":10.,"grating":"g","hardware":{"lightfield":{"devices":[{"type":"Camera","model":"A","serial_number":"1"}]}}});
         let mut current = base.clone();
         current["hardware"]["lightfield"]["errors"] = json!(["optional metadata unavailable"]);
         assert!(matching_acquisition_settings(&base, &current));
@@ -894,6 +959,58 @@ mod tests {
         current = base.clone();
         current["exposure_ms"] = json!(20.);
         assert!(!matching_acquisition_settings(&base, &current));
+        let mut qualified = json!({"exposure_ms":10.,"grating":"g","background_settings":{"selected_regions":{"status":"supported","value":[{"X":0,"Y":0,"Width":512,"Height":1,"XBinning":1,"YBinning":1}]},"adc_analog_gain":{"status":"supported","value":"low"},"readout_control_mode":{"status":"supported","value":"full"},"sensor_temperature_setpoint":{"status":"supported","value":-70.},"online_flatfield_enabled":{"status":"supported","value":false},"online_blemish_enabled":{"status":"supported","value":false}},"temperature":{"reading":{"status":"supported","value":-69.},"status":{"status":"supported","value":"Locked"}}});
+        for name in [
+            "adc_speed",
+            "adc_quality",
+            "adc_bit_depth",
+            "online_cosmic_ray_enabled",
+            "online_cosmic_ray_method",
+            "online_cosmic_ray_kernel_size",
+            "online_flatfield_reference_file",
+            "online_blemish_definition_file",
+            "online_orientation_enabled",
+            "online_orientation_flip_horizontal",
+            "online_orientation_flip_vertical",
+            "online_orientation_rotate_clockwise",
+        ] {
+            qualified["background_settings"]
+                .as_object_mut()
+                .unwrap()
+                .insert(name.into(), json!({"status":"supported","value":"test"}));
+        }
+        let mut changed = qualified.clone();
+        changed["background_settings"]["selected_regions"]["value"][0]["YBinning"] = json!(2);
+        assert!(!matching_acquisition_settings(&qualified, &changed));
+        let mut temperature_drift = qualified.clone();
+        temperature_drift["temperature"]["reading"]["value"] = json!(-60.);
+        assert!(matching_acquisition_settings(
+            &qualified,
+            &temperature_drift
+        ));
+        let mut setpoint_changed = qualified.clone();
+        setpoint_changed["background_settings"]["sensor_temperature_setpoint"]["value"] =
+            json!(-60.);
+        assert!(!matching_acquisition_settings(
+            &qualified,
+            &setpoint_changed
+        ));
+        let mut unknown = qualified.clone();
+        unknown["background_settings"]["adc_analog_gain"] = json!({"status":"unknown_sdk_member"});
+        assert!(!matching_acquisition_settings(&qualified, &unknown));
+        let mut unsupported = qualified.clone();
+        unsupported["background_settings"]["adc_analog_gain"] = json!({"status":"unsupported"});
+        assert!(!matching_acquisition_settings(&qualified, &unsupported));
+        let mut both_unsupported = unsupported.clone();
+        both_unsupported["background_settings"]["selected_regions"] =
+            json!({"status":"unsupported"});
+        let mut matching_unsupported = both_unsupported.clone();
+        matching_unsupported["background_settings"]["adc_analog_gain"] =
+            json!({"status":"unsupported"});
+        assert!(matching_acquisition_settings(
+            &both_unsupported,
+            &matching_unsupported
+        ));
     }
     #[test]
     fn failed_spectrometer_connect_retains_stop_owner_until_verified_recovery() {

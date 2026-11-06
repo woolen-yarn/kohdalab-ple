@@ -58,7 +58,15 @@ reported as shutdown failure rather than claimed as a safe closed beam.
 `driver_path`. The last is a user-installed folder containing the existing
 `ThorlabsPowerMeter.py` and its `Thorlabs_DotNet_dll/` subfolder with the
 official Thorlabs DLL; this repository does not redistribute the DLL.
-`power_read` returns `power_w`, or an error—never a fake zero reading.
+`power_read` returns `power_w` plus the original `native_value` and
+`native_unit` used for conversion, or an error—never a fake zero reading.
+LightField acquisition settings record ordered selected ROIs (including X/Y
+binning), ADC gain/speed/quality/bit depth, readout control mode, and documented
+online-correction settings for BG equality. A setting reported unsupported by
+the loaded experiment is explicit; a missing SDK member or unreadable critical
+readback makes BG matching fail rather than silently claiming equality.
+Temperature setpoint is a stable BG match field; reading and stabilization
+status are retained as separate observations because they vary.
 
 ## Windows setup
 

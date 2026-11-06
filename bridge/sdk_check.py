@@ -20,8 +20,8 @@ from typing import Any, Callable
 REQUIRED_POWER_METHODS = {"listDevices", "connect", "disconnect", "setWaveLength", "getWaveLength", "setAverageTime", "getAverageTime", "setPowerAutoRange", "updatePowerReading"}
 REQUIRED_CONEX_METHODS = {"OpenInstrument", "CloseInstrument", "SL_Get", "SR_Get", "TP", "TS", "PA_Set", "ST"}
 REQUIRED_LIGHTFIELD_MEMBERS = {
-    "Automation": (), "CameraSettings": ("ShutterTimingExposureTime",),
-    "ExperimentSettings": ("FrameSettingsFramesCombined", "FileNameGenerationDirectory", "FileNameGenerationBaseFileName", "FileNameGenerationAttachIncrement", "FileNameGenerationAttachDate", "FileNameGenerationAttachTime", "OnlineCorrectionsBackgroundCorrectionEnabled"),
+    "Automation": (), "CameraSettings": ("ShutterTimingExposureTime", "AdcAnalogGain", "AdcSpeed", "AdcQuality", "AdcBitDepth", "ReadoutControlMode", "SensorTemperatureSetPoint", "SensorTemperatureReading", "SensorTemperatureStatus"),
+    "ExperimentSettings": ("FrameSettingsFramesCombined", "FileNameGenerationDirectory", "FileNameGenerationBaseFileName", "FileNameGenerationAttachIncrement", "FileNameGenerationAttachDate", "FileNameGenerationAttachTime", "OnlineCorrectionsBackgroundCorrectionEnabled", "OnlineCorrectionsCosmicRayCorrectionEnabled", "OnlineCorrectionsCosmicRayCorrectionMethod", "OnlineCorrectionsCosmicRayCorrectionKernelSize", "OnlineCorrectionsFlatfieldCorrectionEnabled", "OnlineCorrectionsFlatfieldCorrectionReferenceFile", "OnlineCorrectionsBlemishCorrectionEnabled", "OnlineCorrectionsBlemishCorrectionDefinitionFile", "OnlineCorrectionsOrientationCorrectionEnabled", "OnlineCorrectionsOrientationCorrectionFlipHorizontally", "OnlineCorrectionsOrientationCorrectionFlipVertically", "OnlineCorrectionsOrientationCorrectionRotateClockwise"),
     "SpectrometerSettings": ("GratingCenterWavelength", "Grating"), "ExportFileType": ("Csv",),
 }
 
