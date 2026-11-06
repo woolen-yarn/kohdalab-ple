@@ -14,6 +14,12 @@ The Windows companion is updated to the fixed, reviewed Shutter 0.6.6 source, in
 
 ## Compatibility and distribution / 互換性と配布
 
-Existing profiles and saved runs remain readable. Raw vendor files and acquired arrays are retained before post-acquisition matching/analysis. Windows Setup/portable, Mac Apple-silicon app and source remain a private preview; Windows hardware acquisition still needs the manufacturer SDKs. This release does not claim new physical qualification. README storage details are bilingual.
+Existing profiles and saved runs remain readable. Raw vendor files and acquired arrays are retained before post-acquisition matching/analysis. Windows Setup/portable, Mac Apple-silicon app and source are available as a public preview; Windows hardware acquisition still needs the manufacturer SDKs. This release does not claim new physical qualification. README storage details are bilingual.
 
-既存設定・保存データの読込は維持します。ベンダーの生ファイルと取得配列を照合・解析前に保持します。Windows Setup／portable・Mac Apple silicon app・sourceをprivate previewとして配布し、Windows実機取得には引き続きメーカーSDKが必要です。新たな実機検証済みとは主張しません。READMEの保存仕様を英日更新しました。
+既存設定・保存データの読込は維持します。ベンダーの生ファイルと取得配列を照合・解析前に保持します。Windows Setup／portable・Mac Apple silicon app・sourceを一般公開のPreviewとして配布し、Windows実機取得には引き続きメーカーSDKが必要です。新たな実機検証済みとは主張しません。READMEの保存仕様を英日更新しました。
+
+## Public preview and notice correction / 一般公開と出典表記の訂正
+
+The repository and v0.3.9 downloads are now public; the release remains marked as a pre-release. Existing v0.3.9 assets and checksums are unchanged. Their `third_party/NOTICE.md` incorrectly names Shutter 0.4.1 and commit `8d22245899c36206622341ed5957919508aac0a1`. The Windows companion is actually Shutter **0.6.6**, commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d`, as recorded in its `companion-origin.json` and matching source archive. The [current notice](https://github.com/woolen-yarn/kohdalab-ple/blob/main/third_party/NOTICE.md) corrects this attribution.
+
+リポジトリとv0.3.9の配布物を一般公開し、pre-release区分を維持します。既存のv0.3.9配布ファイルとチェックサムは変更していません。同梱の`third_party/NOTICE.md`にあるShutter 0.4.1・commit `8d22245899c36206622341ed5957919508aac0a1`は誤記です。実際のWindows同梱版は**0.6.6**・commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d`で、`companion-origin.json`と対応ソースにも記録されています。[現在の出典表記](https://github.com/woolen-yarn/kohdalab-ple/blob/main/third_party/NOTICE.md)を訂正しました。

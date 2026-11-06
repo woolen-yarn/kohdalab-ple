@@ -27,6 +27,8 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 | --- | --- | --- |
 | v0.3.9 preview / 実機確認用 | [Release v0.3.9](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.9): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
+Public preview: the repository and downloads are publicly available; the release remains a GitHub pre-release. / リポジトリと配布物は一般公開しています。実機確認用のPreviewとして、GitHubのpre-release区分を維持します。
+
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
 配布版の起動にRustは不要です。実機取得にはWindows・64-bit Python・メーカーソフトが必要です。Demoは機器不要です。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。実機確認用であり、実機検証済みの安定版ではありません。

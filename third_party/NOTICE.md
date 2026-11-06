@@ -37,7 +37,9 @@ notice remains in `kohdalab-trkr/LICENSE`.
 
 ## kohdalab-shutter Windows companion
 
-GitHub Windows releases may include the separately built GUI/CLI of MIT-licensed [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) at commit `8d22245899c36206622341ed5957919508aac0a1` (package 0.4.1, GUI API protocol 2). Its upstream LICENSE, matching source archive and dependency license texts are retained under `companions/kohdalab-shutter`. The PLE executable communicates with this program; it does not incorporate its Rust implementation or flash firmware.
+GitHub Windows releases may include the separately built GUI/CLI of MIT-licensed [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) at commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d` (package 0.6.6, GUI API protocol 2). Its upstream LICENSE, matching source archive and dependency license texts are retained under `companions/kohdalab-shutter`. The PLE executable communicates with this program; it does not incorporate its Rust implementation or flash firmware.
+
+Windows配布版の同梱Shutterは上記commitの0.6.6（GUI API protocol 2）です。対応するソース・MITライセンス・依存ライブラリのライセンス文書を`companions/kohdalab-shutter`に保持します。PLEとは別プログラムとして通信し、firmwareの書込みは行いません。
 
 ## Windows Setup
 
