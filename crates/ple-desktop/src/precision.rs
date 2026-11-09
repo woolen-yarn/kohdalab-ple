@@ -462,20 +462,7 @@ pub fn configure(ctx: &egui::Context) {
         // available, and supplies Japanese glyphs after Segoe UI.
         for (order, file) in ["segoeui.ttf", "YuGothR.ttc"].into_iter().enumerate() {
             if let Ok(bytes) = std::fs::read(windows.join("Fonts").join(file)) {
-                let count = ttf_parser::fonts_in_collection(&bytes).unwrap_or(1);
-                let index = (0..count)
-                    .find(|index| {
-                        ttf_parser::Face::parse(&bytes, *index)
-                            .ok()
-                            .is_some_and(|face| {
-                                face.names().into_iter().any(|name| {
-                                    name.to_string().is_some_and(|name| {
-                                        name == "Segoe UI" || name == "Yu Gothic UI"
-                                    })
-                                })
-                            })
-                    })
-                    .unwrap_or(0);
+                let index = crate::font_selection::windows_ui_face_index(&bytes);
                 let mut data = egui::FontData::from_owned(bytes);
                 data.index = index;
                 fonts
@@ -490,7 +477,7 @@ pub fn configure(ctx: &egui::Context) {
         }
     }
     ctx.set_fonts(fonts);
-    ctx.style_mut(|style| {
+    ctx.global_style_mut(|style| {
         for size in style.text_styles.values_mut() {
             *size = egui::FontId::proportional(12.);
         }
@@ -569,7 +556,7 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.set_visuals(egui::Visuals::dark());
         configure(&ctx);
-        let style = ctx.style();
+        let style = ctx.global_style();
         assert_eq!(style.visuals.panel_fill, Color32::from_rgb(18, 19, 23));
         assert_eq!(style.visuals.window_fill, Color32::from_rgb(26, 27, 32));
         assert_eq!(

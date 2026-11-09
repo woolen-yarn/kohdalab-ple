@@ -1233,11 +1233,12 @@ impl PleApp {
             self.right_was_maximized = false;
         }
     }
-    pub(super) fn draw(&mut self, ctx: &egui::Context) {
+    pub(super) fn draw(&mut self, root: &mut egui::Ui) {
+        let ctx = &root.ctx().clone();
         self.geometry.clear();
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(BG))
-            .show(ctx, |ui| {
+            .show_inside(root, |ui| {
                 let viewport = ui.max_rect();
                 if !self.rails_initialized {
                     (self.left_collapsed, self.right_collapsed) =
@@ -1446,7 +1447,7 @@ fn label_number(ui: &mut egui::Ui, label: &str, value: &mut f64, step: f64) {
 mod tests {
     use super::*;
     fn frame(app: &mut PleApp, ctx: &egui::Context, events: Vec<egui::Event>) {
-        let _ = ctx.run(
+        let _ = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(rect(0., 0., 1566., 900.)),
                 events,

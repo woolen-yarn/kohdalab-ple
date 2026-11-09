@@ -5,6 +5,7 @@ mod api_ui;
 mod backend;
 mod engine;
 mod file_dialog;
+mod font_selection;
 mod live_monitor;
 mod precision;
 mod presentation;
@@ -566,7 +567,8 @@ fn save_profile(path: &std::path::Path, config: &Config) -> Result<(), String> {
     Ok(())
 }
 impl eframe::App for PleApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &root.ctx().clone();
         self.events();
         self.poll_api(ctx);
         if ctx.input(|i| i.viewport().close_requested())
@@ -594,7 +596,7 @@ impl eframe::App for PleApp {
             self.start();
         }
         self.poll_dialog();
-        self.draw(ctx);
+        self.draw(root);
         if self.screenshot.is_some()
             && self.auto_started
             && ((!self.busy && !self.samples.is_empty())
