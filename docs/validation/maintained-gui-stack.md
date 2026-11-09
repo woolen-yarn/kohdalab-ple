@@ -11,3 +11,14 @@ Local evidence: 122 Rust tests, strict Clippy and native Mac Demo common-control
 New physical fault/stop tests were waived by the operator this round; prior use is not a newly passed hardware test.
 
 利用者の指示により今回の実機異常・停止試験は省略しています。運用実績を今回の実機試験合格として記録しません。
+
+## Common SDK lease race / 共通SDKの制御権競合
+
+The Python SDK now serializes lease transitions and rejects retired heartbeat
+workers by generation. A heartbeat queued before voluntary release cannot poison
+the next acquisition. Real active-lease revocation remains an error. Deterministic
+regression tests cover both cases; the common SDK suite passes 16 tests.
+
+Python SDKでは制御権の遷移を排他化し、終了したheartbeatを世代で判別します。
+正常な解放の前に待機していたheartbeatが次の制御権取得を誤って失敗させる競合を修正しました。
+実際の制御権喪失は引き続きエラーとし、両ケースの再現試験を含む共通SDK 16件が成功しています。

@@ -67,7 +67,11 @@ class DirectoryLayoutTests(unittest.TestCase):
         ):
             self.assertEqual(
                 control._directories("kohdalab-iv"),
-                [Path("/profile/.kohdalab/iv/run"), Path("/profile/.kohdalab/control"), Path("/profile/.kohdalab/run")],
+                [
+                    Path("/profile/.kohdalab/iv/run"),
+                    Path("/profile/.kohdalab/control"),
+                    Path("/profile/.kohdalab/run"),
+                ],
             )
         with (
             patch.dict(
@@ -82,7 +86,11 @@ class DirectoryLayoutTests(unittest.TestCase):
     def test_app_owned_run_discovery_and_explicit_override(self):
         import os
         import kohdalab_control as control
-        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp}):
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"HOME": tmp, "USERPROFILE": tmp}),
+        ):
             root = Path(tmp) / ".kohdalab"
             iv = root / "iv/run/iv.json"
             trkr = root / "trkr/run/trkr.json"
@@ -90,15 +98,25 @@ class DirectoryLayoutTests(unittest.TestCase):
             for path in (iv, trkr, explicit):
                 path.parent.mkdir(parents=True)
                 path.write_text("{}")
+
             def endpoint(path):
                 name = "trkr" if path == trkr else "iv"
-                return Endpoint("kohdalab-" + name, "127.0.0.1", 1, "private", str(path), 1, path)
+                return Endpoint(
+                    "kohdalab-" + name, "127.0.0.1", 1, "private", str(path), 1, path
+                )
+
             def describe(endpoint, *args):
                 return {"application": endpoint.application, "control_protocol": 1}
-            with patch.object(control, "load_endpoint", side_effect=endpoint), patch.object(control, "_exchange", side_effect=describe):
+
+            with (
+                patch.object(control, "load_endpoint", side_effect=endpoint),
+                patch.object(control, "_exchange", side_effect=describe),
+            ):
                 self.assertEqual({e.path for e in discover()}, {iv, trkr})
                 self.assertEqual([e.path for e in discover("kohdalab-iv")], [iv])
-                self.assertEqual([e.path for e in discover(directory=explicit.parent)], [explicit])
+                self.assertEqual(
+                    [e.path for e in discover(directory=explicit.parent)], [explicit]
+                )
             self.assertFalse((root / "control").exists())
             self.assertFalse((root / "iv/config").exists())
 
@@ -237,9 +255,7 @@ class BoundaryTests(unittest.TestCase):
 
         with patch("kohdalab_control.socket.create_connection", return_value=Peer()):
             with self.assertRaises(ControlError) as caught:
-                control._exchange(
-                    self.endpoint(), "status", {"request_id": "limit"}, 1
-                )
+                control._exchange(self.endpoint(), "status", {"request_id": "limit"}, 1)
         self.assertEqual(caught.exception.code, "validation")
 
         class IncompletePeer(Peer):
@@ -322,6 +338,75 @@ class BoundaryTests(unittest.TestCase):
             self.assertEqual(client.release()["cleanup"], "verified")
             self.assertEqual(status.call_count, 2)
             self.assertIsNone(client._lease)
+
+    def test_queued_retired_heartbeat_cannot_poison_reacquire(self):
+        class QueuedStop:
+            def __init__(self):
+                self.entered = threading.Event()
+                self.stopped = False
+
+            def wait(self, _interval):
+                self.entered.set()
+                return False
+
+            def set(self):
+                self.stopped = True
+
+            def is_set(self):
+                return self.stopped
+
+        client = ControlClient(endpoint=self.endpoint())
+        retired = QueuedStop()
+        client._lease = "retiring-lease"
+        client._heartbeat_stop = retired
+        queued = threading.Thread(
+            target=control._heartbeat,
+            args=(
+                control.weakref.ref(client),
+                retired,
+                client._heartbeat_generation,
+                0.1,
+            ),
+        )
+        with client._lock:
+            queued.start()
+            self.assertTrue(retired.entered.wait(1))
+            with patch.object(
+                client, "_call", return_value={"released": True, "cleanup": "verified"}
+            ):
+                self.assertTrue(client.release()["released"])
+        queued.join(1)
+        self.assertFalse(queued.is_alive())
+        self.assertIsNone(client._heartbeat_error)
+        with patch.object(
+            client,
+            "_call",
+            return_value={"lease": "reacquired-lease", "heartbeat_seconds": 2.0},
+        ):
+            self.assertEqual(client.acquire()["lease"], "reacquired-lease")
+        client._heartbeat_stop.set()
+
+    def test_active_heartbeat_revocation_remains_reported(self):
+        class OneTickStop:
+            def wait(self, _interval):
+                return False
+
+            def is_set(self):
+                return False
+
+        client = ControlClient(endpoint=self.endpoint())
+        stop = OneTickStop()
+        client._lease = "active-lease"
+        client._heartbeat_stop = stop
+        revoked = ControlError(
+            "GUI control lease is not held or was revoked", code="busy"
+        )
+        with patch.object(client, "_call", side_effect=revoked):
+            control._heartbeat(control.weakref.ref(client), stop, 0, 0.1)
+        self.assertIs(client._heartbeat_error, revoked)
+        with self.assertRaises(ControlError) as error:
+            client.acquire()
+        self.assertIs(error.exception, revoked)
 
     def test_advertised_read_view_never_claims_ownership(self):
         client = ControlClient(endpoint=self.endpoint())
