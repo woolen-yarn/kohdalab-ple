@@ -210,6 +210,18 @@ impl<'a> Form<'a> {
                 {
                     *value = parsed;
                 }
+                let invalid = !text.parse::<f64>().is_ok_and(f64::is_finite);
+                if invalid {
+                    response.clone().on_hover_text(
+                        "Input not applied: enter a finite number. Start uses the last accepted value.",
+                    );
+                    ui.painter().rect_stroke(
+                        field,
+                        6.0,
+                        egui::Stroke::new(1.0_f32, ui.visuals().error_fg_color),
+                        egui::StrokeKind::Inside,
+                    );
+                }
                 ui.data_mut(|d| d.insert_temp(id, text));
                 let mut clicked = 0.;
                 if arrows {
@@ -569,5 +581,18 @@ mod tests {
         for font in style.text_styles.values() {
             assert_eq!(font.size, 12.);
         }
+    }
+
+    #[test]
+    fn invalid_number_draft_keeps_last_value_and_field_geometry() {
+        let mut value = 12.5;
+        let field = rect(94., 120., 100., 26.);
+        let draft = "not-a-number";
+        if let Some(parsed) = draft.parse::<f64>().ok().filter(|v| v.is_finite()) {
+            value = parsed;
+        }
+        assert_eq!(value, 12.5);
+        assert_eq!(field, rect(94., 120., 100., 26.));
+        assert!(!draft.parse::<f64>().is_ok_and(f64::is_finite));
     }
 }
