@@ -1,21 +1,24 @@
-# KohdaLab PLE 0.3.10 preview
+# KohdaLab PLE 0.3.11 preview
 
-## Maintained GUI runtime / GUI実行基盤の保守
+## Changes / 変更内容
 
-The desktop GUI now uses the maintained eframe/egui 0.34 stack and `read-fonts` instead of the unmaintained font parser. Numeric-input feedback is retained. Controller and API polling now run independently of visible drawing, so a covered window does not stall background work.
+- Save analysis CSV, raw CSV, lifecycle log and conditions JSON as a linked, hashed measurement bundle; retain old data and configuration compatibility. / 解析CSV・raw CSV・ライフサイクルlog・条件JSONを参照・ハッシュで結び、既存データ・設定の互換性を維持します。
+- Clarify stored units, native versus corrected readings, timestamps and original-data references without changing measurement control. / 保存単位・生値と補正後値・時刻・元データ参照を明確化し、測定制御は維持します。
+- Add flattened spectral-bin analysis with mm/nm/W/counts units and explicit spectrum/metadata references; retain SPE, background and full-run Open Results. / mm/nm/W/countsを明記したスペクトルbin解析と元データ参照を追加し、SPE・背景・フォルダー全体のOpen Resultsを維持します。
+- Preserve actual/target position, native power value/unit, wavelength and acquisition times in raw events, including partial/error runs. / 部分保存・異常終了時も、実位置／指令値・native power値／単位・波長・取得時刻をrawイベントに残します。
 
-Desktop GUIを保守中のeframe/egui 0.34系へ更新し、保守終了したフォント解析を`read-fonts`へ置き換えました。数値入力の反映表示は維持します。制御・APIの処理を描画から分離し、ウィンドウが隠れた場合も背景処理が停止しないようにしました。
+## Compatibility / 互換性
 
-The shared Python control client now serializes lease release/reacquisition and ignores retired heartbeat workers. This prevents a queued old heartbeat from incorrectly failing a later voluntary reacquisition; genuine lease loss remains an error.
+Keep all four bundle files together. Existing profiles remain usable without automatic migration. Missing/unqualified readings remain empty/null rather than being relabelled or replaced with zero. Raw values preserve available precision; rounding does not imply calibrated uncertainty.
 
-共通Python制御クライアントでは、制御権の解放・再取得を直列化し、終了済みheartbeatを無視します。以前のheartbeat待機が次の正常な再取得を誤って失敗させる競合を防ぎ、実際の制御権喪失は引き続きエラーとして扱います。
+4ファイルは一緒に保管してください。既存設定は自動移行不要です。欠測・単位未確認値を別単位やゼロに置き換えず、rawは取得精度を保持します。丸め桁数は校正済み不確かさを意味しません。
 
-## Compatibility and distribution / 互換性と配布
+Preserve the complete native run folder for existing Open Results and reanalysis, including background, SPE/spectra and accepted analysis settings. The Preview channel remains unchanged. Windows physical acquisition requires manufacturer SDKs; the pinned Shutter companion is unchanged.
 
-Existing profiles, saved runs, raw vendor files and acquired arrays remain readable and are not migrated. Windows Setup/portable, macOS Apple-silicon app and source are published as a GitHub pre-release. The Windows companion remains the pinned Shutter 0.6.6 source required by the current package; this release does not change its protocol or ownership flow.
+既存Open Results・再解析には、背景・SPE／スペクトル・採用解析条件を含むフォルダー全体を残してください。Preview扱いは維持します。Windows実機取得にはメーカーSDKが必要で、固定版Shutter companionは変更しません。
 
-既存設定・保存データ・ベンダー生ファイル・取得配列は移行不要で、従来どおり読めます。Windows Setup／portable、macOS Apple silicon app、sourceをGitHub pre-releaseとして配布します。Windows同梱Shutterは現行パッケージで必要な0.6.6固定ソースのままで、protocolや制御権の流れは変更しません。
+## Packages and validation / 配布と検証
 
-Windows hardware acquisition still requires the manufacturer SDKs. Windows binaries are unsigned; macOS applications use ad hoc signatures and are not notarized. Release checks cover Rust/Python tests, Windows Setup/portable, macOS package, checksums and Simulation/Demo API paths. No new physical-device qualification was performed for this release.
+Windows x64 Setup and portable ZIP, macOS Apple-silicon application, corresponding source and SHA-256 checksums are provided. Release validation covers software tests, extracted packages, isolated installer lifecycle and simulation. No new physical-device fault/stop qualification is claimed. Windows binaries are unsigned; Mac apps are ad hoc signed and not notarized.
 
-Windows実機取得には引き続きメーカーSDKが必要です。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。Rust／Python試験、Windows Setup／portable、macOS配布物、チェックサム、Simulation／Demo API経路を検証しています。今回、新たな実機適合試験は実施していません。
+Windows x64 Setup／portable ZIP、macOS Apple siliconアプリ、対応ソース・SHA-256を提供します。ソフトウェア試験・展開後の配布版・隔離環境のインストーラー動作・模擬測定を確認します。新たな実機異常・停止試験の合格は主張しません。Windowsは未署名、Macはアドホック署名・Apple公証なしです。
