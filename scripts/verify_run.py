@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -106,6 +107,54 @@ def json_object(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{path}: expected JSON object")
     return value
+
+
+def verify_bundle(run: Path, points: list[dict[str, str]], errors: list[str]) -> None:
+    """Validate the additive bundle when present; pre-bundle runs stay readable."""
+    manifest_path = run / "analysis.run.json"
+    if not manifest_path.is_file():
+        return
+    try:
+        manifest = json_object(manifest_path)
+        if manifest.get("run_bundle", {}).get("schema") != "kohdalab_run_bundle_v1":
+            raise ValueError("analysis.run.json: unsupported bundle schema")
+        filenames = manifest.get("run_bundle", {}).get("filenames")
+        expected = {"analysis_csv": "analysis.csv", "raw_csv": "analysis.raw.csv", "log": "analysis.log", "conditions_json": "analysis.run.json"}
+        if filenames != expected:
+            raise ValueError("analysis.run.json: bundle filenames differ from the PLE contract")
+        if manifest.get("in_progress"):
+            raise ValueError("analysis.run.json: completed verifier cannot accept an in-progress bundle")
+        hashes = manifest.get("file_hashes")
+        if not isinstance(hashes, dict) or manifest.get("hash_verification", {}).get("status") != "verified":
+            raise ValueError("analysis.run.json: finalized SHA-256 hashes are missing")
+        for key, name in (("csv_sha256", "analysis.csv"), ("raw_csv_sha256", "analysis.raw.csv"), ("log_sha256", "analysis.log")):
+            actual = hashlib.sha256((run / name).read_bytes()).hexdigest()
+            if hashes.get(key) != actual:
+                raise ValueError(f"analysis.run.json: {key} does not match {name}")
+        analysis = read_csv(run / "analysis.csv", {"run_id", "point_index", "repeat_index", "target_mm", "actual_mm", "acquisition_completed_unix_s", "excitation_nm", "emission_nm", "corrected_counts", "corrected_counts_per_W", "meter_power_W", "sample_power_W", "PL_peak_nm", "PL_integral_counts_nm", "raw_spectrum_csv", "acquisition_metadata_json"})
+        raw = read_csv(run / "analysis.raw.csv", {"run_id", "event_index", "event_type", "host_time_unix_s", "details_json"})
+        if not raw:
+            raise ValueError("analysis.raw.csv: no lifecycle/acquisition evidence")
+        if not (run / "analysis.log").is_file() or not (run / "analysis.log").read_text(encoding="utf-8"):
+            raise ValueError("analysis.log: missing or empty")
+        expected_bins = 0
+        for point in points:
+            base = safe_spectrum_base(point.get("spectrum_base", ""), (point.get("point_index", ""), point.get("repeat_index", "")))
+            expected_bins += len(read_csv(run / "processed" / f"{base}.csv", {"emission_nm"}))
+        if len(analysis) != expected_bins:
+            raise ValueError("analysis.csv: flattened bin count differs from processed spectra")
+        for row in analysis:
+            power = finite(row["sample_power_W"], "analysis sample_power_W")
+            meter_power = finite(row["meter_power_W"], "analysis meter_power_W")
+            corrected = finite(row["corrected_counts"], "analysis corrected_counts")
+            if power <= 0 or meter_power <= 0 or not 0 <= finite(row["actual_mm"], "analysis actual_mm") <= 25 or not close_arithmetic(finite(row["corrected_counts_per_W"], "analysis corrected_counts_per_W"), corrected / power, 1e-8):
+                raise ValueError("analysis.csv: invalid power normalization")
+            for key in ("raw_spectrum_csv", "acquisition_metadata_json"):
+                reference = row[key]
+                if not reference or Path(reference).is_absolute() or ".." in Path(reference).parts or not (run / reference).is_file():
+                    raise ValueError(f"analysis.csv: invalid {key} reference")
+    except ValueError as error:
+        errors.append(str(error))
 
 
 def verify(run: Path, tolerance: float) -> dict[str, Any]:
@@ -251,6 +300,7 @@ def verify(run: Path, tolerance: float) -> dict[str, Any]:
             errors.append(str(error))
     else:
         warnings.append("status.json is absent; run may be incomplete")
+    verify_bundle(run, points, errors)
     return {"run": str(run), "ok": not errors, "errors": errors, "warnings": warnings,
             "verified_acquisitions": verified, "hardware_spe_required": hardware, "tolerance": tolerance}
 

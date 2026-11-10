@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -62,6 +63,18 @@ class VerifyRunTests(unittest.TestCase):
         (run / "status.json").write_text(json.dumps({"state": "completed", "completed_acquisitions": 1, "planned_acquisitions": 1}))
         return run
 
+    def _add_bundle(self, run: Path) -> None:
+        fields = ["run_id", "point_index", "repeat_index", "target_mm", "actual_mm", "acquisition_completed_unix_s", "excitation_nm", "emission_nm", "corrected_counts", "corrected_counts_per_W", "meter_power_W", "sample_power_W", "PL_peak_nm", "PL_integral_counts_nm", "raw_spectrum_csv", "acquisition_metadata_json"]
+        self._write_csv(run / "analysis.csv", fields, [
+            {"run_id": "run", "point_index": 0, "repeat_index": 0, "target_mm": 18.0, "actual_mm": 18.0, "acquisition_completed_unix_s": 12.0, "excitation_nm": 700.0, "emission_nm": 700.0, "corrected_counts": 10.0, "corrected_counts_per_W": 5.0, "meter_power_W": 2.0, "sample_power_W": 2.0, "PL_peak_nm": 701.0, "PL_integral_counts_nm": 1.0, "raw_spectrum_csv": "raw/point_00000_repeat_000.csv", "acquisition_metadata_json": "metadata/point_00000_repeat_000.json"},
+            {"run_id": "run", "point_index": 0, "repeat_index": 0, "target_mm": 18.0, "actual_mm": 18.0, "acquisition_completed_unix_s": 12.0, "excitation_nm": 700.0, "emission_nm": 701.0, "corrected_counts": 20.0, "corrected_counts_per_W": 10.0, "meter_power_W": 2.0, "sample_power_W": 2.0, "PL_peak_nm": 701.0, "PL_integral_counts_nm": 1.0, "raw_spectrum_csv": "raw/point_00000_repeat_000.csv", "acquisition_metadata_json": "metadata/point_00000_repeat_000.json"},
+        ])
+        self._write_csv(run / "analysis.raw.csv", ["run_id", "event_index", "event_type", "point_index", "repeat_index", "host_time_unix_s", "result", "error", "details_json"], [{"run_id": "run", "event_index": 1, "event_type": "run_finished", "point_index": "", "repeat_index": "", "host_time_unix_s": 12.0, "result": "ok", "error": "", "details_json": "{}"}])
+        (run / "analysis.log").write_text("12\tINFO\trun\trun_finished\t{}\n")
+        names = {"analysis_csv": "analysis.csv", "raw_csv": "analysis.raw.csv", "log": "analysis.log", "conditions_json": "analysis.run.json"}
+        hashes = {("csv_sha256" if key == "analysis_csv" else f"{key}_sha256"): hashlib.sha256((run / value).read_bytes()).hexdigest() for key, value in (("analysis_csv", "analysis.csv"), ("raw_csv", "analysis.raw.csv"), ("log", "analysis.log"))}
+        (run / "analysis.run.json").write_text(json.dumps({"run_bundle": {"schema": "kohdalab_run_bundle_v1", "filenames": names}, "in_progress": False, "file_hashes": hashes, "hash_verification": {"status": "verified"}}))
+
     def test_malformed_background_metadata_returns_report(self) -> None:
         run = self._run_fixture()
         path = run / "metadata" / "background.json"
@@ -90,6 +103,15 @@ class VerifyRunTests(unittest.TestCase):
         self.assertTrue(report["ok"], report)
         self.assertEqual(report["verified_acquisitions"], 1)
         self.assertFalse(report["hardware_spe_required"])
+
+    def test_valid_bundle_hashes_and_flattened_bins_pass(self) -> None:
+        run = self._run_fixture()
+        self._add_bundle(run)
+        self.assertTrue(verify_run.verify(run, 1e-8)["ok"])
+        (run / "analysis.log").write_text("changed\n")
+        report = verify_run.verify(run, 1e-8)
+        self.assertFalse(report["ok"])
+        self.assertTrue(any("log_sha256" in error for error in report["errors"]))
 
     def test_processed_arithmetic_mutation_fails(self) -> None:
         run = self._run_fixture()

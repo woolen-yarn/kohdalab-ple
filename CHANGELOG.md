@@ -1,5 +1,12 @@
 # Changelog / 変更履歴
 
+## 0.3.11 — 2026-11-10
+
+- Save analysis CSV, raw CSV, lifecycle log and conditions JSON as a linked, hashed measurement bundle; retain old data and configuration compatibility. / 解析CSV・raw CSV・ライフサイクルlog・条件JSONを参照・ハッシュで結び、既存データ・設定の互換性を維持します。
+- Clarify stored units, native versus corrected readings, timestamps and original-data references without changing measurement control. / 保存単位・生値と補正後値・時刻・元データ参照を明確化し、測定制御は維持します。
+- Add flattened spectral-bin analysis with mm/nm/W/counts units and explicit spectrum/metadata references; retain SPE, background and full-run Open Results. / mm/nm/W/countsを明記したスペクトルbin解析と元データ参照を追加し、SPE・背景・フォルダー全体のOpen Resultsを維持します。
+- Preserve actual/target position, native power value/unit, wavelength and acquisition times in raw events, including partial/error runs. / 部分保存・異常終了時も、実位置／指令値・native power値／単位・波長・取得時刻をrawイベントに残します。
+
 ## 0.3.8 — 2026-11-05
 
 - Ignore empty home-directory environment values and use the valid platform fallback consistently in the GUI and common Python client. / GUIと共通Pythonクライアントで、空のホーム環境変数を除外して有効な代替先を使います。
