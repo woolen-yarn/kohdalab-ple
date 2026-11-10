@@ -420,7 +420,17 @@ impl Recording {
             .map_err(|e| e.to_string())?;
         self.completed += 1;
         self.log("INFO", "acquisition_saved", json!({"point_index":s.point_index,"repeat_index":s.repeat_index,"completed":self.completed}))?;
-        self.event("acquisition_saved",json!({"point_index":s.point_index,"repeat_index":s.repeat_index,"completed":self.completed}))?;
+        self.event("acquisition_saved", json!({
+            "point_index":s.point_index,"repeat_index":s.repeat_index,"completed":self.completed,
+            "target_mm":s.target_mm,"actual_mm":s.actual_mm,
+            "meter_power_W":s.power_w,"sample_power_W":s.sample_power_w,
+            "power_sensor_wavelength_nm":s.power_sensor_wavelength_nm,
+            "power_observation":s.power_observation,
+            "power_timestamp_unix_s":s.power_timestamp_unix_s,
+            "acquisition_started_unix_s":s.acquisition_started_unix_s,
+            "acquisition_completed_unix_s":s.timestamp_unix_s,
+            "raw_spectrum_csv":raw_reference,"acquisition_metadata_json":metadata_reference
+        }))?;
         self.status("running", None)
     }
     pub fn status(&self, state: &str, error: Option<&str>) -> Result<(), String> {
@@ -671,6 +681,26 @@ mod tests {
         assert!(analysis.contains("metadata/point_00000_repeat_000.json"));
         let raw = fs::read_to_string(r.directory.join("analysis.raw.csv")).unwrap();
         assert!(raw.contains("acquisition_saved") && raw.contains("run_finished"));
+        let mut reader = csv::Reader::from_reader(raw.as_bytes());
+        let saved = reader
+            .records()
+            .map(Result::unwrap)
+            .find(|row| &row[2] == "acquisition_saved")
+            .unwrap();
+        let details: Value = serde_json::from_str(&saved[8]).unwrap();
+        assert_eq!(details["actual_mm"], s.actual_mm);
+        assert_eq!(details["meter_power_W"], s.power_w);
+        assert_eq!(details["sample_power_W"], s.sample_power_w);
+        assert_eq!(details["power_timestamp_unix_s"], s.power_timestamp_unix_s);
+        assert_eq!(details["acquisition_completed_unix_s"], s.timestamp_unix_s);
+        assert_eq!(
+            details["raw_spectrum_csv"],
+            "raw/point_00000_repeat_000.csv"
+        );
+        assert_eq!(
+            details["acquisition_metadata_json"],
+            "metadata/point_00000_repeat_000.json"
+        );
         let manifest: Value =
             serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
                 .unwrap();
