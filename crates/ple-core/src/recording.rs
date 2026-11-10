@@ -1,9 +1,10 @@
 //! Immutable run inputs, raw/processed CSV and crash-readable run status.
 use crate::{Config, HC_EV_NM, Plan, Sample, Spectrum};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::{BufWriter, Write},
+    io::{BufWriter, Read, Write},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -12,6 +13,19 @@ pub fn unix_s() -> f64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs_f64()
+}
+fn sha256(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|e| e.to_string())?;
+    let mut hash = Sha256::new();
+    let mut buffer = [0_u8; 65_536];
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 {
+            break;
+        }
+        hash.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hash.finalize()))
 }
 pub fn atomic_json(path: &Path, value: &impl serde::Serialize) -> Result<(), String> {
     let temp = path.with_extension("json.tmp");
@@ -36,6 +50,10 @@ pub struct Recording {
     pub directory: PathBuf,
     events: File,
     summary: csv::Writer<File>,
+    analysis: csv::Writer<File>,
+    raw: csv::Writer<File>,
+    log: File,
+    raw_event_index: u64,
     completed: usize,
     planned: usize,
     preview_acquired: bool,
@@ -79,6 +97,57 @@ impl Recording {
             .append(true)
             .open(directory.join("events.jsonl"))
             .map_err(|e| e.to_string())?;
+        let analysis_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(directory.join("analysis.csv"))
+            .map_err(|e| e.to_string())?;
+        let mut analysis = csv::Writer::from_writer(analysis_file);
+        analysis
+            .write_record([
+                "run_id",
+                "point_index",
+                "repeat_index",
+                "target_mm",
+                "actual_mm",
+                "acquisition_completed_unix_s",
+                "excitation_nm",
+                "emission_nm",
+                "corrected_counts",
+                "corrected_counts_per_W",
+                "meter_power_W",
+                "sample_power_W",
+                "PL_peak_nm",
+                "PL_integral_counts_nm",
+                "raw_spectrum_csv",
+                "acquisition_metadata_json",
+            ])
+            .map_err(|e| e.to_string())?;
+        analysis.flush().map_err(|e| e.to_string())?;
+        let raw_file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(directory.join("analysis.raw.csv"))
+            .map_err(|e| e.to_string())?;
+        let mut raw = csv::Writer::from_writer(raw_file);
+        raw.write_record([
+            "run_id",
+            "event_index",
+            "event_type",
+            "point_index",
+            "repeat_index",
+            "host_time_unix_s",
+            "result",
+            "error",
+            "details_json",
+        ])
+        .map_err(|e| e.to_string())?;
+        raw.flush().map_err(|e| e.to_string())?;
+        let log = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(directory.join("analysis.log"))
+            .map_err(|e| e.to_string())?;
         let mut summary =
             csv::Writer::from_path(directory.join("points.csv")).map_err(|e| e.to_string())?;
         summary
@@ -105,6 +174,10 @@ impl Recording {
             directory,
             events,
             summary,
+            analysis,
+            raw,
+            log,
+            raw_event_index: 0,
             completed: 0,
             planned: p.acquisition_count,
             preview_acquired: false,
@@ -112,6 +185,11 @@ impl Recording {
             analysis_confirmed: false,
             run_id,
         };
+        r.log("INFO", "run_created", json!({"planned_acquisitions": p.acquisition_count, "simulation": c.mode == crate::Mode::Demo}))?;
+        atomic_json(
+            &r.directory.join("analysis.run.json"),
+            &bundle_manifest(c, p, &r.run_id, "awaiting_background", true, 0, None),
+        )?;
         r.event("run_created", json!({}))?;
         r.status("awaiting_background", None)?;
         Ok(r)
@@ -124,15 +202,64 @@ impl Recording {
             .into_owned()
     }
     pub fn event(&mut self, kind: &str, data: Value) -> Result<(), String> {
+        let at = unix_s();
         serde_json::to_writer(
             &mut self.events,
-            &json!({"time_unix_s":unix_s(),"kind":kind,"data":data}),
+            &json!({"time_unix_s":at,"kind":kind,"data":data}),
         )
         .map_err(|e| e.to_string())?;
         self.events
             .write_all(b"\n")
             .and_then(|_| self.events.flush())
-            .map_err(|e| e.to_string())
+            .map_err(|e| e.to_string())?;
+        self.raw_event_index += 1;
+        let point = data
+            .get("point_index")
+            .and_then(Value::as_u64)
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let repeat = data
+            .get("repeat_index")
+            .and_then(Value::as_u64)
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let error = data.get("error").and_then(Value::as_str).unwrap_or("");
+        let result = if kind == "run_finished" {
+            data.get("state")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        } else if error.is_empty() {
+            "ok"
+        } else {
+            "error"
+        };
+        self.raw
+            .write_record([
+                self.run_id.as_str(),
+                &self.raw_event_index.to_string(),
+                kind,
+                &point,
+                &repeat,
+                &at.to_string(),
+                result,
+                error,
+                &serde_json::to_string(&data).map_err(|e| e.to_string())?,
+            ])
+            .map_err(|e| e.to_string())?;
+        self.raw.flush().map_err(|e| e.to_string())
+    }
+    fn log(&mut self, level: &str, event: &str, context: Value) -> Result<(), String> {
+        writeln!(
+            self.log,
+            "{}\t{}\t{}\t{}\t{}",
+            unix_s(),
+            level,
+            self.run_id,
+            event,
+            serde_json::to_string(&context).map_err(|e| e.to_string())?
+        )
+        .map_err(|e| e.to_string())?;
+        self.log.flush().map_err(|e| e.to_string())
     }
     pub fn hardware(&mut self, hardware: Value) -> Result<(), String> {
         atomic_json(
@@ -167,7 +294,9 @@ impl Recording {
             )),
             &json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index,"target_mm":a.target_mm,"actual_mm":a.actual_mm,"power_w":a.power_w,"sample_power_w":a.sample_power_w,"power_sensor_wavelength_nm":a.power_sensor_wavelength_nm,"power_observation":a.power_observation,"power_timestamp_unix_s":a.power_timestamp_unix_s,"acquisition_started_unix_s":a.acquisition_started_unix_s,"timestamp_unix_s":a.timestamp_unix_s,"spe_path":a.spectrum.spe_path,"settings":a.spectrum.settings,"background":"metadata/background.json"}),
         )?;
-        self.event("raw_acquired",json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index}))
+        self.event("raw_acquired",json!({"file_base":a.file_base,"point_index":a.point_index,"repeat_index":a.repeat_index,
+            "target_mm":a.target_mm,"actual_mm":a.actual_mm,"power_w":a.power_w,"sample_power_w":a.sample_power_w,
+            "power_observation":a.power_observation,"raw_spectrum_csv":format!("raw/{}.csv", a.file_base),"spe_path":a.spectrum.spe_path}))
     }
     pub fn preview(&mut self, a: &crate::Acquisition) -> Result<(), String> {
         if !self.raw_saved.contains(&a.file_base) {
@@ -232,10 +361,37 @@ impl Recording {
         }
         csv.flush().map_err(|e| e.to_string())?;
         csv.get_ref().sync_all().map_err(|e| e.to_string())?;
-        atomic_json(
-            &self.directory.join("metadata").join(format!("{name}.json")),
-            s,
-        )?;
+        let metadata_path = self.directory.join("metadata").join(format!("{name}.json"));
+        atomic_json(&metadata_path, s)?;
+        let raw_reference = format!("raw/{name}.csv");
+        let metadata_reference = format!("metadata/{name}.json");
+        for i in 0..s.spectrum.counts.len() {
+            self.analysis
+                .write_record([
+                    self.run_id.as_str(),
+                    &s.point_index.to_string(),
+                    &s.repeat_index.to_string(),
+                    &s.target_mm.to_string(),
+                    &s.actual_mm.to_string(),
+                    &s.timestamp_unix_s.to_string(),
+                    &s.excitation_nm.to_string(),
+                    &s.spectrum.wavelength_nm[i].to_string(),
+                    &s.corrected_counts[i].to_string(),
+                    &(s.corrected_counts[i] / s.sample_power_w).to_string(),
+                    &s.power_w.to_string(),
+                    &s.sample_power_w.to_string(),
+                    &s.pl_peak_nm.map(|v| v.to_string()).unwrap_or_default(),
+                    &s.pl_integral_counts_nm.to_string(),
+                    &raw_reference,
+                    &metadata_reference,
+                ])
+                .map_err(|e| e.to_string())?;
+        }
+        self.analysis.flush().map_err(|e| e.to_string())?;
+        self.analysis
+            .get_ref()
+            .sync_all()
+            .map_err(|e| e.to_string())?;
         self.summary
             .write_record([
                 s.point_index.to_string(),
@@ -263,6 +419,7 @@ impl Recording {
             .sync_all()
             .map_err(|e| e.to_string())?;
         self.completed += 1;
+        self.log("INFO", "acquisition_saved", json!({"point_index":s.point_index,"repeat_index":s.repeat_index,"completed":self.completed}))?;
         self.event("acquisition_saved",json!({"point_index":s.point_index,"repeat_index":s.repeat_index,"completed":self.completed}))?;
         self.status("running", None)
     }
@@ -275,8 +432,73 @@ impl Recording {
     pub fn finish(&mut self, state: &str, error: Option<&str>) -> Result<(), String> {
         self.event("run_finished", json!({"state":state,"error":error}))?;
         self.events.sync_all().map_err(|e| e.to_string())?;
-        self.status(state, error)
+        self.raw.flush().map_err(|e| e.to_string())?;
+        self.raw.get_ref().sync_all().map_err(|e| e.to_string())?;
+        self.log(
+            if error.is_some() || matches!(state, "failed" | "aborted") {
+                "ERROR"
+            } else {
+                "INFO"
+            },
+            "run_finished",
+            json!({"state":state,"completed":self.completed,"error":error}),
+        )?;
+        self.log.sync_all().map_err(|e| e.to_string())?;
+        self.status(state, error)?;
+        let settings: Value = serde_json::from_reader(
+            File::open(self.directory.join("settings.json")).map_err(|e| e.to_string())?,
+        )
+        .map_err(|e| e.to_string())?;
+        let config: Config = serde_json::from_value(
+            settings
+                .get("config")
+                .cloned()
+                .ok_or("Missing run config")?,
+        )
+        .map_err(|e| e.to_string())?;
+        let plan: Plan =
+            serde_json::from_value(settings.get("plan").cloned().ok_or("Missing run plan")?)
+                .map_err(|e| e.to_string())?;
+        let mut manifest = bundle_manifest(
+            &config,
+            &plan,
+            &self.run_id,
+            state,
+            false,
+            self.completed,
+            error,
+        );
+        if self.directory.join("accepted_settings.json").is_file() {
+            manifest["accepted_settings"]["value"] = serde_json::from_reader(
+                File::open(self.directory.join("accepted_settings.json"))
+                    .map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        manifest["file_hashes"] = json!({"csv_sha256":sha256(&self.directory.join("analysis.csv"))?,
+            "raw_csv_sha256":sha256(&self.directory.join("analysis.raw.csv"))?,
+            "log_sha256":sha256(&self.directory.join("analysis.log"))?});
+        manifest["hash_verification"] =
+            json!({"status":"verified","algorithm":"sha256","files":"analysis_csv,raw_csv,log"});
+        atomic_json(&self.directory.join("analysis.run.json"), &manifest)
     }
+}
+fn bundle_manifest(
+    c: &Config,
+    p: &Plan,
+    run_id: &str,
+    status: &str,
+    in_progress: bool,
+    completed: usize,
+    error: Option<&str>,
+) -> Value {
+    json!({"schema_version":1,"application":"kohdalab-ple","application_version":env!("CARGO_PKG_VERSION"),"run_id":run_id,
+        "csv_schema":"ple_spectral_bins_v1","raw_schema":"ple_raw_events_v1","log":{"schema":"kohdalab_run_log_v1","timestamp_unit":"unix_s","filename":"analysis.log"},
+        "in_progress":in_progress,"final_status":status,"completed_acquisitions":completed,"error":error,
+        "requested_settings":{"config":c,"plan":p},"accepted_settings":{"path":"accepted_settings.json","value":null},
+        "hardware_observations":"hardware.json","native_artifacts":{"settings":"settings.json","status":"status.json","points":"points.csv","raw":"raw/","processed":"processed/","metadata":"metadata/"},
+        "run_bundle":{"schema":"kohdalab_run_bundle_v1","filenames":{"analysis_csv":"analysis.csv","raw_csv":"analysis.raw.csv","log":"analysis.log","conditions_json":"analysis.run.json"}},
+        "file_hashes":null,"hash_verification":{"status":"pending","algorithm":"sha256"}})
 }
 fn write_raw_csv(path: &Path, s: &Spectrum) -> Result<(), String> {
     if path.exists() {
@@ -399,6 +621,11 @@ mod tests {
         };
         let p = c.plan().unwrap();
         let mut r = Recording::create(&c, &p).unwrap();
+        let pending: Value =
+            serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
+                .unwrap();
+        assert_eq!(pending["in_progress"], true);
+        assert_eq!(pending["hash_verification"]["status"], "pending");
         let b = Spectrum {
             wavelength_nm: vec![750., 800.],
             counts: vec![4., 5.],
@@ -437,8 +664,68 @@ mod tests {
         assert_eq!(v["state"], "stopped");
         let (_, loaded) = load_run(&r.directory).unwrap();
         assert_eq!(loaded[0].corrected_counts, vec![-1., 5.]);
+        let analysis = fs::read_to_string(r.directory.join("analysis.csv")).unwrap();
+        assert_eq!(analysis.lines().count(), 3);
+        assert!(analysis.contains("corrected_counts_per_W"));
+        assert!(analysis.contains("raw/point_00000_repeat_000.csv"));
+        assert!(analysis.contains("metadata/point_00000_repeat_000.json"));
+        let raw = fs::read_to_string(r.directory.join("analysis.raw.csv")).unwrap();
+        assert!(raw.contains("acquisition_saved") && raw.contains("run_finished"));
+        let manifest: Value =
+            serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["run_bundle"]["schema"], "kohdalab_run_bundle_v1");
+        assert_eq!(
+            manifest["run_bundle"]["filenames"]["analysis_csv"],
+            "analysis.csv"
+        );
+        assert_eq!(manifest["hash_verification"]["status"], "verified");
+        assert_eq!(
+            manifest["file_hashes"]["csv_sha256"],
+            sha256(&r.directory.join("analysis.csv")).unwrap()
+        );
+        assert!(
+            fs::read_to_string(r.directory.join("analysis.log"))
+                .unwrap()
+                .contains("run_finished")
+        );
         let raw = fs::read_to_string(r.directory.join("raw/point_00000_repeat_000.csv")).unwrap();
         assert!(raw.contains("750,3"));
         assert!(!r.directory.join("raw/background.spe").exists());
+    }
+    #[test]
+    fn failed_bundle_records_error_and_hashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = Config {
+            output_dir: dir.path().to_string_lossy().into(),
+            ..Default::default()
+        };
+        let p = c.plan().unwrap();
+        let mut r = Recording::create(&c, &p).unwrap();
+        r.finish("failed", Some("simulated storage error")).unwrap();
+        let manifest: Value =
+            serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
+                .unwrap();
+        assert_eq!(manifest["in_progress"], false);
+        assert_eq!(manifest["final_status"], "failed");
+        assert_eq!(manifest["error"], "simulated storage error");
+        assert_eq!(manifest["hash_verification"]["status"], "verified");
+        assert_eq!(
+            manifest["file_hashes"]["log_sha256"],
+            sha256(&r.directory.join("analysis.log")).unwrap()
+        );
+        let mut raw = csv::Reader::from_path(r.directory.join("analysis.raw.csv")).unwrap();
+        let final_row = raw
+            .records()
+            .filter_map(Result::ok)
+            .find(|row| row.get(2) == Some("run_finished"))
+            .unwrap();
+        assert_eq!(final_row.get(6), Some("failed"));
+        assert_eq!(final_row.get(7), Some("simulated storage error"));
+        assert!(
+            fs::read_to_string(r.directory.join("analysis.log"))
+                .unwrap()
+                .contains("\tERROR\t")
+        );
     }
 }

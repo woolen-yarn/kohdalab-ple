@@ -62,13 +62,14 @@ Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D*
 
 ## Saved data / 保存仕様
 
-Keep the complete run directory together; `points.csv` alone cannot reproduce the acquisition.
+Keep the complete run directory together; `analysis.csv` is a flattened plotted-data interchange table, while native files remain required for reanalysis.
 
-測定フォルダー全体を一緒に保管してください。`points.csv`だけでは取得条件を再現できません。
+測定フォルダー全体を一緒に保管してください。`analysis.csv`は表示曲線用の平坦化した交換表で、再解析にはnative保存物も必要です。
 
 | File / ファイル | Contents / 内容 |
 | --- | --- |
 | `points.csv` | Analysis summary per point/repeat: target/actual mm, excitation, power, peak/integral, timestamps and spectrum link. / 点・繰り返しごとの指令／実位置、励起波長、パワー、ピーク・積分、時刻、スペクトル対応。 |
+| `analysis.csv`, `analysis.raw.csv`, `analysis.log`, `analysis.run.json` | Four-file bundle: flattened plotted bins, long-event acquisition/provenance references, lifecycle log, and conditions/manifest. `analysis.csv` labels mm/nm/W/seconds in its headers; `meter_power_W` is the observed meter power and `sample_power_W` is the correction-adjusted normalization divisor. Counts remain detector counts, while `PL_integral_counts_nm` is the wavelength integral. Raw spectra and native power observation/unit remain in `raw/`/metadata rather than being copied into the event table. / 4ファイルbundle：平坦化した表示bin、long-event取得・provenance参照、ライフサイクルlog、条件・manifest。`analysis.csv`はmm/nm/W/秒をheaderで示し、`meter_power_W`は観測meter値、`sample_power_W`は補正後の正規化除数です。countsは検出器counts、`PL_integral_counts_nm`は波長積分です。rawスペクトルとnative power観測値・単位はevent表へ複製せず`raw/`/metadataに保持します。 |
 | `processed/*.csv` | Emission nm/eV, raw/BG/subtracted counts and counts/W. Negative differences are retained. / 発光nm/eV、生／BG／差引counts、counts/W。負の差も保持。 |
 | `raw/*.csv`, vendor `.spe` / `.lightfield.csv` | Numeric wavelength/count arrays and immutable vendor outputs; Demo does not create synthetic SPE. / 波長・counts配列と取得時のベンダー出力。Demoは偽のSPEを作りません。 |
 | `metadata/*.json` | Acquisition/BG linkage, native power value/unit, converted W, sensor wavelength, host times and observed LightField settings. / 取得とBGの対応、ネイティブ電力・単位、換算W、センサー波長、ホスト時刻、LightField読戻し条件。 |
@@ -140,3 +141,5 @@ macOS: `/Applications/KohdaLab PLE.app`. See [installation](docs/guides/install.
 ## Common GUI control / 共通GUI制御
 
 [Control Protocol 1 and Python/Notebook examples / 共通APIとPython・Notebook](docs/reference/common-control-api.md). The existing application API remains supported; operation payloads and safety policy are app-specific. Camera is read-only. / 既存APIは維持し、操作引数と安全方針は各アプリに従います。Cameraは読み取り専用です。
+
+See [Measurement output bundles / 測定データの保存セット](docs/reference/measurement-output.md) for common file roles and unit conventions.
