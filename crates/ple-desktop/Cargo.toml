@@ -3,15 +3,16 @@ name = "kohdalab-ple"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version = "1.92"
 
 [dependencies]
 ple-core.workspace = true
 kohdalab-control-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-eframe = { version = "0.33", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
-egui_plot = "0.34"
-ttf-parser = "0.25"
+eframe = { version = "0.34.3", default-features = false, features = ["glow", "default_fonts", "x11", "wayland"] }
+egui_plot = "0.35"
+read-fonts = "0.38"
 getrandom = "0.4"
 tempfile = "3"
 image = { version = "0.25", default-features = false, features = ["png"] }

@@ -955,7 +955,7 @@ mod tests {
         assert_eq!(pending["cleanup"], "pending");
         assert!(app.api.as_ref().unwrap().session.lease.is_some());
         app.busy = false;
-        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        let _ = ctx.run_ui(Default::default(), |ui| app.poll_api(ui.ctx()));
         assert!(app.api.as_ref().unwrap().session.lease.is_none());
         assert!(!app.api_cleanup);
     }
@@ -981,7 +981,7 @@ mod tests {
         assert_eq!(pending["cleanup"], "pending");
         app.busy = false;
         app.api_cleanup_error = Some("cleanup acknowledgement failed".into());
-        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        let _ = ctx.run_ui(Default::default(), |ui| app.poll_api(ui.ctx()));
         assert!(app.api.as_ref().unwrap().session.lease.is_some());
         assert!(app.api_cleanup);
         let status = call(
@@ -997,7 +997,7 @@ mod tests {
         let (mut app, ctx, _dir, _lease) = setup();
         assert!(app.api.as_ref().unwrap().session.lease.is_some());
         app.api_cleanup = true;
-        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        let _ = ctx.run_ui(Default::default(), |ui| app.poll_api(ui.ctx()));
         assert!(!app.api_cleanup);
         assert!(app.api.as_ref().unwrap().session.lease.is_some());
     }
@@ -1288,7 +1288,7 @@ mod tests {
             .as_mut()
             .unwrap()
             .touched = Instant::now() - Duration::from_secs(11);
-        let _ = ctx.run(Default::default(), |ctx| app.poll_api(ctx));
+        let _ = ctx.run_ui(Default::default(), |ui| app.poll_api(ui.ctx()));
         let receipt = wait_receipt(&mut app, job["id"].as_str().unwrap());
         assert_eq!(receipt["status"], "stopped");
         assert!(app.samples.is_empty());

@@ -5,6 +5,7 @@ mod api_ui;
 mod backend;
 mod engine;
 mod file_dialog;
+mod font_selection;
 mod live_monitor;
 mod precision;
 mod presentation;
@@ -566,7 +567,7 @@ fn save_profile(path: &std::path::Path, config: &Config) -> Result<(), String> {
     Ok(())
 }
 impl eframe::App for PleApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.events();
         self.poll_api(ctx);
         if ctx.input(|i| i.viewport().close_requested())
@@ -594,7 +595,18 @@ impl eframe::App for PleApp {
             self.start();
         }
         self.poll_dialog();
-        self.draw(ctx);
+        ctx.request_repaint_after(Duration::from_millis(
+            if self.connected.iter().any(|x| *x) || self.busy {
+                16
+            } else {
+                75
+            },
+        ));
+    }
+
+    fn ui(&mut self, root: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &root.ctx().clone();
+        self.draw(root);
         if self.screenshot.is_some()
             && self.auto_started
             && ((!self.busy && !self.samples.is_empty())
@@ -770,6 +782,20 @@ fn main() -> eframe::Result {
 #[cfg(test)]
 mod config_storage_tests {
     use super::*;
+    #[test]
+    fn hidden_gui_logic_receives_motion_completion_without_drawing() {
+        use eframe::App as _;
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        app.manual_moving = true;
+        sender.send(Event::ManualMoveFinished(Ok(12.0))).unwrap();
+        app.logic(&ctx, &mut eframe::Frame::_new_kittest());
+        assert!(!app.manual_moving);
+        assert_eq!(app.state, "CONEX ready at 12.000000 mm");
+    }
+
     #[test]
     fn native_profile_round_trip_and_foreign_file_protection() {
         let directory = tempfile::tempdir().unwrap();

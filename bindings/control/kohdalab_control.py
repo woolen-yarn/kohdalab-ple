@@ -82,9 +82,7 @@ def _home_directory(home, profile, windows, fallback):
         return Path(selected)
     fallback = Path(fallback())
     if not fallback.is_absolute():
-        raise ControlError(
-            "User home directory is unavailable", code="validation"
-        )
+        raise ControlError("User home directory is unavailable", code="validation")
     return fallback
 
 
@@ -102,7 +100,10 @@ def _directories(application=None) -> list[Path]:
         applications = (name,) if name in applications else ()
     # Legacy paths are read-only discovery fallbacks; new applications write
     # only their own run directory. Explicit directory= remains exact.
-    return [root / name / "run" for name in applications] + [root / "control", root / "run"]
+    return [root / name / "run" for name in applications] + [
+        root / "control",
+        root / "run",
+    ]
 
 
 def load_endpoint(path) -> Endpoint:
@@ -242,7 +243,9 @@ def discover(application=None, *, directory=None, probe_timeout=0.25):
     """Find responsive instances; never select one by process/file recency."""
     probe_timeout = _positive(probe_timeout, "probe_timeout")
     endpoints = {}
-    directories = [Path(directory)] if directory is not None else _directories(application)
+    directories = (
+        [Path(directory)] if directory is not None else _directories(application)
+    )
     paths = sorted({path for folder in directories for path in folder.glob("*.json")})
     if len(paths) > 256:
         raise ControlError(
@@ -265,18 +268,35 @@ def discover(application=None, *, directory=None, probe_timeout=0.25):
     return list(endpoints.values())
 
 
-def _heartbeat(reference, stop, interval):
+def _heartbeat(reference, stop, generation, interval):
     while not stop.wait(interval):
         client = reference()
         if client is None:
             return
         try:
             with client._lock:
-                if client._lease is None:
+                # A release/acquire may have happened after wait() returned
+                # but before this worker obtained the client lock. Never send
+                # or report an old lease heartbeat in that window.
+                if (
+                    stop.is_set()
+                    or client._heartbeat_stop is not stop
+                    or client._heartbeat_generation != generation
+                    or client._lease is None
+                ):
                     return
                 client._call("heartbeat")
         except ControlError as error:
-            client._heartbeat_error = error
+            with client._lock:
+                # Preserve failures only for the currently active heartbeat.
+                # A voluntarily retired worker cannot poison a new lease.
+                if (
+                    not stop.is_set()
+                    and client._heartbeat_stop is stop
+                    and client._heartbeat_generation == generation
+                    and client._lease is not None
+                ):
+                    client._heartbeat_error = error
             return
         finally:
             del client
@@ -305,6 +325,7 @@ class ControlClient:
         self._lease = None
         self._lock = threading.RLock()
         self._heartbeat_stop = threading.Event()
+        self._heartbeat_generation = 0
         self._heartbeat_error = None
         self._description = None
 
@@ -361,31 +382,39 @@ class ControlClient:
         return self._call("config")
 
     def acquire(self, **policy):
-        if self._heartbeat_error:
-            raise self._heartbeat_error
-        result = self._call("acquire", **policy)
-        lease = result.get("lease")
-        if not isinstance(lease, str) or not lease:
-            raise ControlError("Acquire did not return a lease", code="validation")
-        self._heartbeat_stop.set()
-        self._heartbeat_stop = threading.Event()
-        self._lease = lease
-        interval = result.get("heartbeat_seconds", 1.0)
-        if (
-            isinstance(interval, bool)
-            or not isinstance(interval, (float, int))
-            or not math.isfinite(interval)
-            or not 0.1 <= interval <= 2.0
-        ):
-            raise ControlError("Invalid heartbeat interval", code="validation")
-        self._heartbeat_stop.clear()
-        thread = threading.Thread(
-            target=_heartbeat,
-            args=(weakref.ref(self), self._heartbeat_stop, float(interval)),
-            daemon=True,
-        )
-        thread.start()
-        return result
+        with self._lock:
+            if self._heartbeat_error:
+                raise self._heartbeat_error
+            result = self._call("acquire", **policy)
+            lease = result.get("lease")
+            if not isinstance(lease, str) or not lease:
+                raise ControlError("Acquire did not return a lease", code="validation")
+            self._heartbeat_stop.set()
+            self._heartbeat_generation += 1
+            self._heartbeat_stop = threading.Event()
+            # Keep an accepted lease available for explicit cleanup even if
+            # the peer returns an invalid heartbeat interval.
+            self._lease = lease
+            interval = result.get("heartbeat_seconds", 1.0)
+            if (
+                isinstance(interval, bool)
+                or not isinstance(interval, (float, int))
+                or not math.isfinite(interval)
+                or not 0.1 <= interval <= 2.0
+            ):
+                raise ControlError("Invalid heartbeat interval", code="validation")
+            thread = threading.Thread(
+                target=_heartbeat,
+                args=(
+                    weakref.ref(self),
+                    self._heartbeat_stop,
+                    self._heartbeat_generation,
+                    float(interval),
+                ),
+                daemon=True,
+            )
+            thread.start()
+            return result
 
     def invoke(self, method, *, request_id=None, **params):
         if self._heartbeat_error:
@@ -469,40 +498,42 @@ class ControlClient:
 
     def release(self, *, timeout=10.0):
         timeout = _positive(timeout, "timeout")
-        if self._lease is None:
-            return {"released": True, "cleanup": "not_required"}
-        result = self._call("release")
-        # Accepted release may revoke the lease while cleanup remains pending.
-        # Do not let a heartbeat to that retiring lease poison future voluntary reacquisition.
-        self._heartbeat_stop.set()
-        deadline = time.monotonic() + timeout
-        while not (
-            result.get("released") is True
-            and result.get("cleanup") in ("verified", "not_required")
-        ):
-            state = self.status()
-            if state["ownership"].get("owned") is False and state["cleanup"] in (
-                "verified",
-                "not_required",
+        with self._lock:
+            if self._lease is None:
+                return {"released": True, "cleanup": "not_required"}
+            result = self._call("release")
+            # Retire the generation while holding the same lock used by the
+            # worker. A queued heartbeat cannot observe the old lease after a
+            # successful release response and poison voluntary reacquisition.
+            self._heartbeat_stop.set()
+            self._heartbeat_generation += 1
+            deadline = time.monotonic() + timeout
+            while not (
+                result.get("released") is True
+                and result.get("cleanup") in ("verified", "not_required")
             ):
-                result = {
-                    "released": True,
-                    "cleanup": state["cleanup"],
-                    "native": state,
-                }
-                break
-            if state["phase"] == "error":
-                raise ControlError(
-                    "Release cleanup was not confirmed", code="cleanup_unconfirmed"
-                )
-            if time.monotonic() >= deadline:
-                raise ControlError(
-                    "Release is still pending", code="timeout", outcome_unknown=True
-                )
-            time.sleep(0.05)
-        self._lease = None
-        self._heartbeat_stop.set()
-        return result
+                state = self.status()
+                if state["ownership"].get("owned") is False and state["cleanup"] in (
+                    "verified",
+                    "not_required",
+                ):
+                    result = {
+                        "released": True,
+                        "cleanup": state["cleanup"],
+                        "native": state,
+                    }
+                    break
+                if state["phase"] == "error":
+                    raise ControlError(
+                        "Release cleanup was not confirmed", code="cleanup_unconfirmed"
+                    )
+                if time.monotonic() >= deadline:
+                    raise ControlError(
+                        "Release is still pending", code="timeout", outcome_unknown=True
+                    )
+                time.sleep(0.05)
+            self._lease = None
+            return result
 
     def close(self):
         try:

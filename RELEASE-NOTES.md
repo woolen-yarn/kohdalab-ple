@@ -1,25 +1,21 @@
-# KohdaLab PLE 0.3.9 preview
+# KohdaLab PLE 0.3.10 preview
 
-## Reproducible recording / 再現可能な記録
+## Maintained GUI runtime / GUI実行基盤の保守
 
-The run verifier no longer applies a shared absolute tolerance to power and epoch timestamps. It checks duplicated observations exactly and allows relative/ULP rounding only in derived arithmetic. Tests now reject 1 pW versus 2 pW and a ten-second timestamp substitution.
+The desktop GUI now uses the maintained eframe/egui 0.34 stack and `read-fonts` instead of the unmaintained font parser. Numeric-input feedback is retained. Controller and API polling now run independently of visible drawing, so a covered window does not stall background work.
 
-検証ツールの電力・epoch時刻に共通の絶対許容差を使う処理を修正しました。同一観測の転記は厳密一致、計算結果だけ相対／ULP許容差で確認し、1 pWと2 pWの取り違え・10秒の時刻改変を検出します。
+Desktop GUIを保守中のeframe/egui 0.34系へ更新し、保守終了したフォント解析を`read-fonts`へ置き換えました。数値入力の反映表示は維持します。制御・APIの処理を描画から分離し、ウィンドウが隠れた場合も背景処理が停止しないようにしました。
 
-Native meter values/units now survive bridge-to-Rust acquisition and are saved alongside converted W, wavelength and timing. LightField BG matching now checks ordered ROI/binning, ADC gain/speed/quality/depth, readout mode, temperature setpoint and documented online corrections. Enabled flatfield/blemish reference files are hashed. Missing critical evidence blocks normalization; volatile temperature readings are recorded separately. Settings are queried read-only through documented SDK interfaces.
+The shared Python control client now serializes lease release/reacquisition and ignores retired heartbeat workers. This prevents a queued old heartbeat from incorrectly failing a later voluntary reacquisition; genuine lease loss remains an error.
 
-メーターのネイティブ値・単位をRust取得経路まで保持し、換算W・波長・時刻と共に保存します。LightFieldのBG照合にROI・binning・ADC・読出し・温度設定値・オンライン補正を追加し、有効なflatfield／blemishの参照ファイルをハッシュ記録します。重要情報が欠けた場合は正規化せず、変動する実温度は別記録とします。メーカー文書で確認した読取り専用APIを使用します。
-
-The Windows companion is updated to the fixed, reviewed Shutter 0.6.6 source, including its persistent operation journal. Protocol 2 and the existing ownership flow remain in use. / Windows同梱Shutterもレビュー済みの0.6.6固定ソースへ更新し、操作履歴保存を含めます。protocol 2と既存の制御権の流れは維持します。
+共通Python制御クライアントでは、制御権の解放・再取得を直列化し、終了済みheartbeatを無視します。以前のheartbeat待機が次の正常な再取得を誤って失敗させる競合を防ぎ、実際の制御権喪失は引き続きエラーとして扱います。
 
 ## Compatibility and distribution / 互換性と配布
 
-Existing profiles and saved runs remain readable. Raw vendor files and acquired arrays are retained before post-acquisition matching/analysis. Windows Setup/portable, Mac Apple-silicon app and source are available as a public preview; Windows hardware acquisition still needs the manufacturer SDKs. This release does not claim new physical qualification. README storage details are bilingual.
+Existing profiles, saved runs, raw vendor files and acquired arrays remain readable and are not migrated. Windows Setup/portable, macOS Apple-silicon app and source are published as a GitHub pre-release. The Windows companion remains the pinned Shutter 0.6.6 source required by the current package; this release does not change its protocol or ownership flow.
 
-既存設定・保存データの読込は維持します。ベンダーの生ファイルと取得配列を照合・解析前に保持します。Windows Setup／portable・Mac Apple silicon app・sourceを一般公開のPreviewとして配布し、Windows実機取得には引き続きメーカーSDKが必要です。新たな実機検証済みとは主張しません。READMEの保存仕様を英日更新しました。
+既存設定・保存データ・ベンダー生ファイル・取得配列は移行不要で、従来どおり読めます。Windows Setup／portable、macOS Apple silicon app、sourceをGitHub pre-releaseとして配布します。Windows同梱Shutterは現行パッケージで必要な0.6.6固定ソースのままで、protocolや制御権の流れは変更しません。
 
-## Public preview and notice correction / 一般公開と出典表記の訂正
+Windows hardware acquisition still requires the manufacturer SDKs. Windows binaries are unsigned; macOS applications use ad hoc signatures and are not notarized. Release checks cover Rust/Python tests, Windows Setup/portable, macOS package, checksums and Simulation/Demo API paths. No new physical-device qualification was performed for this release.
 
-The repository and v0.3.9 downloads are now public; the release remains marked as a pre-release. Existing v0.3.9 assets and checksums are unchanged. Their `third_party/NOTICE.md` incorrectly names Shutter 0.4.1 and commit `8d22245899c36206622341ed5957919508aac0a1`. The Windows companion is actually Shutter **0.6.6**, commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d`, as recorded in its `companion-origin.json` and matching source archive. The [current notice](https://github.com/woolen-yarn/kohdalab-ple/blob/main/third_party/NOTICE.md) corrects this attribution.
-
-リポジトリとv0.3.9の配布物を一般公開し、pre-release区分を維持します。既存のv0.3.9配布ファイルとチェックサムは変更していません。同梱の`third_party/NOTICE.md`にあるShutter 0.4.1・commit `8d22245899c36206622341ed5957919508aac0a1`は誤記です。実際のWindows同梱版は**0.6.6**・commit `7e8d1c953905ad92a49a07cd75b916c38a3a518d`で、`companion-origin.json`と対応ソースにも記録されています。[現在の出典表記](https://github.com/woolen-yarn/kohdalab-ple/blob/main/third_party/NOTICE.md)を訂正しました。
+Windows実機取得には引き続きメーカーSDKが必要です。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。Rust／Python試験、Windows Setup／portable、macOS配布物、チェックサム、Simulation／Demo API経路を検証しています。今回、新たな実機適合試験は実施していません。

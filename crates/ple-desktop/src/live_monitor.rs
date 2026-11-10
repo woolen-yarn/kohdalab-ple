@@ -381,7 +381,7 @@ mod tests {
         let context = egui::Context::default();
         let mut history = History::default();
         history.push(1.25e-6, Origin::Hardware);
-        let _ = context.run(
+        let _ = context.run_ui(
             egui::RawInput {
                 screen_rect: Some(Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -390,7 +390,7 @@ mod tests {
                 ..Default::default()
             },
             |ctx| {
-                egui::CentralPanel::default().show(ctx, |ui| {
+                egui::CentralPanel::default().show_inside(ctx, |ui| {
                     let area = Rect::from_min_size(ui.max_rect().min, egui::vec2(167., 140.));
                     let used = draw(ui, area, &history, POWER_CHANNEL, false);
                     assert_eq!(used.min, area.min);
