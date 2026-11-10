@@ -654,8 +654,8 @@ mod tests {
             power_w: 1e-6,
             sample_power_w: 1e-6,
             power_timestamp_unix_s: 1.,
-            power_sensor_wavelength_nm: None,
-            power_observation: serde_json::Value::Null,
+            power_sensor_wavelength_nm: Some(800.),
+            power_observation: json!({"native_value": -30.0, "native_unit": "dBm", "power_W": 1e-6}),
             acquisition_started_unix_s: 2.,
             timestamp_unix_s: 3.,
             pl_peak_nm: Some(800.),
@@ -690,6 +690,8 @@ mod tests {
         let details: Value = serde_json::from_str(&saved[8]).unwrap();
         assert_eq!(details["actual_mm"], s.actual_mm);
         assert_eq!(details["meter_power_W"], s.power_w);
+        assert_eq!(details["power_observation"], s.power_observation);
+        assert_eq!(details["power_sensor_wavelength_nm"], 800.0);
         assert_eq!(details["sample_power_W"], s.sample_power_w);
         assert_eq!(details["power_timestamp_unix_s"], s.power_timestamp_unix_s);
         assert_eq!(details["acquisition_completed_unix_s"], s.timestamp_unix_s);
