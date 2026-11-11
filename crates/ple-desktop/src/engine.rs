@@ -706,6 +706,12 @@ fn execute_inner(
         return Err("Run exceeds live-view memory budget; reduce points/repeats or ROI".into());
     }
     recording.background(&background)?;
+    if let Err(field) = validate_background_settings(&background.settings) {
+        return Err(format!(
+            "Could not read LightField BG setting {field}; raw background retained"
+        )
+        .into());
+    }
     let _ = events.send(Event::Background(background.clone()));
     if c.background.mode == BackgroundMode::Manual {
         let _ = events.send(Event::State(
@@ -923,6 +929,12 @@ fn acquire_point(
     let excitation_extrapolated = c.power.wavelength_mode
         == ple_core::PowerWavelengthMode::PositionCalibration
         && outside_excitation_calibration(plan, actual);
+    if let Err(field) = validate_background_settings(&acquired.spectrum.settings) {
+        return Err(format!(
+            "Could not read LightField signal setting {field}; raw acquisition retained"
+        )
+        .into());
+    }
     if !matching_acquisition_settings(&acquired.spectrum.settings, &bg.settings) {
         return Err("LightField settings changed after BG; raw acquisition retained".into());
     }
@@ -937,7 +949,7 @@ fn acquire_point(
     Ok((acquired, excitation_extrapolated))
 }
 
-fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+fn validate_background_settings(value: &serde_json::Value) -> Result<(), &str> {
     // A current bridge must provide a read-only setting snapshot.  Critical
     // fields may be explicitly unsupported, but an unknown SDK member or an
     // unreadable value is never evidence that BG and signal were the same.
@@ -961,43 +973,45 @@ fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -
         "online_orientation_flip_vertical",
         "online_orientation_rotate_clockwise",
     ];
-    let valid_background_snapshot = |value: &serde_json::Value| {
-        let Some(settings) = value.get("background_settings") else {
-            return value["demo"].as_bool() == Some(true);
-        };
-        settings.as_object().is_some_and(|fields| {
-            REQUIRED_BACKGROUND_FIELDS
-                .iter()
-                .all(|key| fields.contains_key(*key))
-                && fields.values().all(|field| {
-                    matches!(
-                        field.get("status").and_then(|v| v.as_str()),
-                        Some("supported" | "unsupported")
-                    )
-                })
-                && (!fields["online_flatfield_enabled"]
-                    .get("value")
-                    .is_some_and(|v| v == true)
-                    || matches!(
-                        fields
-                            .get("online_flatfield_reference_identity")
-                            .and_then(|v| v.get("status").and_then(|s| s.as_str())),
-                        Some("supported")
-                    ))
-                && (!fields["online_blemish_enabled"]
-                    .get("value")
-                    .is_some_and(|v| v == true)
-                    || matches!(
-                        fields
-                            .get("online_blemish_definition_identity")
-                            .and_then(|v| v.get("status").and_then(|s| s.as_str())),
-                        Some("supported")
-                    ))
-        })
-    };
-    if !valid_background_snapshot(a) || !valid_background_snapshot(b) {
-        return false;
+    if value.get("background_settings").is_none() && value["demo"].as_bool() == Some(true) {
+        return Ok(());
     }
+    let fields = value["background_settings"]
+        .as_object()
+        .ok_or("background_settings")?;
+    for &field in REQUIRED_BACKGROUND_FIELDS {
+        if !fields.contains_key(field) {
+            return Err(field);
+        }
+    }
+    for (name, field) in fields {
+        if !matches!(field["status"].as_str(), Some("supported" | "unsupported")) {
+            return Err(name);
+        }
+    }
+    for (enabled, identity) in [
+        (
+            "online_flatfield_enabled",
+            "online_flatfield_reference_identity",
+        ),
+        (
+            "online_blemish_enabled",
+            "online_blemish_definition_identity",
+        ),
+    ] {
+        if fields[enabled]["value"] == true
+            && fields
+                .get(identity)
+                .and_then(|field| field["status"].as_str())
+                != Some("supported")
+        {
+            return Err(identity);
+        }
+    }
+    Ok(())
+}
+
+fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     if let (Some(old), Some(new)) = (
         a.pointer("/hardware/lightfield/devices")
             .and_then(|v| v.as_array()),
@@ -1117,7 +1131,16 @@ mod tests {
         ));
         let mut unknown = qualified.clone();
         unknown["background_settings"]["adc_analog_gain"] = json!({"status":"unknown_sdk_member"});
-        assert!(!matching_acquisition_settings(&qualified, &unknown));
+        assert_eq!(
+            validate_background_settings(&unknown),
+            Err("adc_analog_gain")
+        );
+        unknown["background_settings"]
+            .as_object_mut()
+            .unwrap()
+            .remove("adc_speed");
+        assert_eq!(validate_background_settings(&unknown), Err("adc_speed"));
+        assert_eq!(validate_background_settings(&qualified), Ok(()));
         let mut unsupported = qualified.clone();
         unsupported["background_settings"]["adc_analog_gain"] = json!({"status":"unsupported"});
         assert!(!matching_acquisition_settings(&qualified, &unsupported));

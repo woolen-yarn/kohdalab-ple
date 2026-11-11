@@ -69,4 +69,10 @@ Set `spectrometer.python` to the actual 64-bit Windows Python executable. Set `L
 
 `spectrometer.python`は実際の64-bit Windows Pythonを指定し、`LIGHTFIELD_ROOT`はLightFieldの導入先へ設定します。CONEX制御PCでは`CONEX_SDK_DIR`またはサーバーの`--sdk-dir`を指定します。リモートCONEX運用時、取得PCにNewport SDKは不要です。グレーティング名、COM/VISA、可動範囲、遮光状態を確認してください。
 
+### CONEX reference adapter / CONEX参照アダプター
+
+For remote operation, set `KOHDA_CONEX_TOKEN` on the controller PC to a nonempty shared secret, then launch `python bridge/conex_server.py --host <controller-ip>` with the controller's LAN address. The current source requires a token for every non-loopback bind and also accepts it via `--token`. On the acquisition PC, set the environment variable named by `stage.token_env` to the same secret and use `stage.protocol = "remote_json"`. The default `127.0.0.1` bind permits local use without a token.
+
+リモート運用では、制御PCの `KOHDA_CONEX_TOKEN` に空でない共有トークンを設定し、`python bridge/conex_server.py --host <controller-ip>` の `<controller-ip>` に制御PCのLANアドレスを指定します。現行ソースではループバック以外でトークンが必須です。 `--token` でも指定できます。取得PCでは `stage.token_env` に指定した環境変数に同じトークンを設定し、`stage.protocol` を `remote_json` にします。既定の `127.0.0.1` でローカル利用する場合はトークンを省略できます。
+
 Run [non-motion preflight and physical qualification](hardware-qualification.md). The SDK checker probes Python/imports with a 30-second timeout and does not open COM/VISA/TCP or move devices. / [機器を動かさない導入検査と実機確認](hardware-qualification.md)へ進んでください。Python/import検査には30秒の期限があり、COM/VISA/TCP接続や移動は行いません。
