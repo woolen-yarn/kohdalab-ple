@@ -19,7 +19,7 @@ struct Active {
 pub(super) enum Note {
     Device(&'static str, bool),
     Finished(String, Option<String>),
-    Manual(Result<f64, String>),
+    Manual(Result<f64, engine::RunError>),
     Spectrometer(Result<Value, String>),
     None,
 }
@@ -777,11 +777,11 @@ impl PleApp {
                 Note::Manual(result) if a.kind == "move" => match result {
                     Ok(_) => self.api_complete(&mut r, "completed", None, None),
                     Err(e) => {
-                        let stopped = e.starts_with("Stop requested;");
+                        let stopped = matches!(e, engine::RunError::Stopped(_));
                         self.api_complete(
                             &mut r,
                             if stopped { "stopped" } else { "error" },
-                            Some(e),
+                            Some(e.to_string()),
                             Some(if stopped { "stopped" } else { "device" }),
                         );
                     }
@@ -1032,6 +1032,35 @@ mod tests {
             "kohdalab_shutter"
         );
     }
+    #[test]
+    fn manual_move_receipts_classify_typed_errors_instead_of_message_prefixes() {
+        for (error, expected) in [
+            (engine::RunError::Stopped("operator cancelled"), "stopped"),
+            (
+                engine::RunError::Failed("Stop requested; device failed".into()),
+                "error",
+            ),
+        ] {
+            let (mut app, _ctx, _dir, lease) = setup();
+            app.connected[1] = true;
+            let receipt = call(
+                &mut app,
+                json!({"action":"move","lease":lease,"position_mm":18.}),
+            )
+            .unwrap();
+            app.api_observe(Note::from_event(&Event::ManualMoveFinished(Err(error))));
+            assert_eq!(
+                app.api
+                    .as_ref()
+                    .unwrap()
+                    .session
+                    .receipt(receipt["id"].as_str().unwrap())
+                    .unwrap()["status"],
+                expected
+            );
+        }
+    }
+
     #[test]
     fn unconfirmed_cleanup_rejects_new_mutations_without_reserving_jobs() {
         let (mut app, _ctx, _dir, lease) = setup();

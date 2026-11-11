@@ -858,7 +858,9 @@ impl StageClient {
             let (lock, ready) = &*stop_barrier;
             let mut barrier = lock.lock().unwrap();
             barrier.pending = false;
-            barrier.unconfirmed = unconfirmed.clone();
+            if unconfirmed.is_some() {
+                barrier.unconfirmed = unconfirmed.clone();
+            }
             let _ = events.send(Event::Cleanup {
                 cause: CleanupCause::Stage,
                 result: unconfirmed.map_or(Ok(()), Err),
@@ -1791,6 +1793,72 @@ mod tests {
             stage.shutdown();
             server.join().unwrap();
         }
+    }
+    #[test]
+    fn successful_retry_stop_does_not_erase_prior_unconfirmed_stop() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let mut stops = 0;
+            for _ in 0..6 {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                let op = request["op"].as_str().unwrap();
+                let result = match op {
+                    "hello" => {
+                        json!({"protocol":"kohdalab-conex","revision":1,"can_stop":true,"can_home":false})
+                    }
+                    "connect" | "stop" => {
+                        json!({"position_mm":18.,"min_mm":0.,"max_mm":25.,"state":"32"})
+                    }
+                    other => panic!("Unexpected operation {other}"),
+                };
+                let ok = if op == "stop" {
+                    stops += 1;
+                    stops > 1
+                } else {
+                    true
+                };
+                writeln!(stream,"{}",json!({"id":request["id"],"ok":ok,"result":result,"error":if ok{Value::Null}else{json!("unconfirmed stop")}})).unwrap();
+            }
+        });
+        let config = StageConfig {
+            host: "127.0.0.1".into(),
+            port,
+            token_env: String::new(),
+            ..Default::default()
+        };
+        let first = RemoteStage::connect(&config).unwrap();
+        let (tx, _rx) = mpsc::channel();
+        let stage = StageClient::spawn(tx);
+        stage.epoch.store(1, Ordering::Release);
+        *stage.remote.lock().unwrap() = Some((1, first));
+        stage.connected.store(true, Ordering::Release);
+        stage.stop();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while stage.stop_barrier.0.lock().unwrap().pending {
+            assert!(Instant::now() < deadline, "Stop did not finish");
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(stage.stop_barrier.0.lock().unwrap().unconfirmed.is_some());
+
+        let retry = RemoteStage::connect(&config).unwrap();
+        stage.epoch.store(2, Ordering::Release);
+        *stage.remote.lock().unwrap() = Some((2, retry));
+        stage.connected.store(true, Ordering::Release);
+        stage.stop();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while stage.stop_barrier.0.lock().unwrap().pending {
+            assert!(Instant::now() < deadline, "Stop did not finish");
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(stage.stop_barrier.0.lock().unwrap().unconfirmed.is_some());
+        stage.shutdown();
+        server.join().unwrap();
     }
     #[test]
     fn legacy_protocol_reads_newline_without_waiting_for_eof() {

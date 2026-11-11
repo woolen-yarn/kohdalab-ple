@@ -50,7 +50,7 @@ impl RunState {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RunError {
     Stopped(&'static str),
     Failed(String),
@@ -84,13 +84,19 @@ pub enum Event {
         device: &'static str,
         connected: bool,
     },
+    // Unlike Device (which also reports retained ownership on failure), this
+    // event confirms that the requested connect/disconnect operation succeeded.
+    DeviceConfirmed {
+        device: &'static str,
+        connected: bool,
+    },
     Telemetry {
         device: &'static str,
         value: f64,
         timestamp: f64,
     },
     State(String),
-    ManualMoveFinished(Result<f64, String>),
+    ManualMoveFinished(Result<f64, RunError>),
     AwaitBackground,
     AwaitSignal,
     Preview(Arc<Acquisition>),
@@ -243,6 +249,10 @@ impl Controller {
                         };
                         if result.is_ok() {
                             connected_mode = Some(c.mode);
+                            let _ = events_tx.send(Event::DeviceConfirmed {
+                                device,
+                                connected: true,
+                            });
                         }
                         if device == "spectrometer" && result.is_ok() {
                             let _ = events_tx.send(Event::Cleanup {
@@ -310,6 +320,12 @@ impl Controller {
                         if spec.is_none() && !stage.is_connected() && !power.is_connected() {
                             connected_mode = None;
                         }
+                        if !disconnect_failed {
+                            let _ = events_tx.send(Event::DeviceConfirmed {
+                                device,
+                                connected: false,
+                            });
+                        }
                         let _ = events_tx.send(Event::Device {
                             device,
                             connected: disconnect_failed,
@@ -331,8 +347,7 @@ impl Controller {
                                 timestamp: unix_s(),
                             });
                         }
-                        let _ = events_tx
-                            .send(Event::ManualMoveFinished(result.map_err(|e| e.to_string())));
+                        let _ = events_tx.send(Event::ManualMoveFinished(result));
                     }
                     Command::Start(c, external_id) => {
                         let ready = spec.is_some()
@@ -709,7 +724,7 @@ fn execute_inner(
     recording.event("signal_path_confirmed", json!({"mode":c.background.mode,"confirmation_source":if c.background.mode==BackgroundMode::Manual {"operator"} else {"controller_state"},"physical_optical_sensor_confirmed":false}))?;
     // The first acquisition is retained, reviewed, then becomes point 0 / repeat 0.
     let actual = move_point(c, 0, plan.positions_mm[0], stage, stop, events, recording)?;
-    let first = acquire_point(
+    let (first, acquisition_extrapolated) = acquire_point(
         c,
         plan,
         0,
@@ -765,15 +780,14 @@ fn execute_inner(
         }
     };
     let accepted_plan = accepted.plan()?;
-    if accepted.excitation_method == ple_core::ExcitationMethod::Calibration
-        && outside_excitation_calibration(&accepted_plan, actual)
-        && !(c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration
-            && outside_excitation_calibration(plan, actual))
+    recording.analysis(&accepted, &accepted_plan)?;
+    let _ = events.send(Event::AnalysisAccepted(Box::new(accepted.clone())));
+    if acquisition_extrapolated
+        || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
+            && outside_excitation_calibration(&accepted_plan, actual))
     {
         recording.excitation_extrapolated(first.point_index, first.repeat_index, actual)?;
     }
-    recording.analysis(&accepted, &accepted_plan)?;
-    let _ = events.send(Event::AnalysisAccepted(Box::new(accepted.clone())));
     recording.sample(&first_sample, &background)?;
     let _ = events.send(Event::Sample(Arc::new(first_sample)));
     check_stop(stop)?;
@@ -787,7 +801,7 @@ fn execute_inner(
             if index == 0 && repeat == 0 {
                 continue;
             }
-            let a = acquire_point(
+            let (a, acquisition_extrapolated) = acquire_point(
                 &accepted,
                 &accepted_plan,
                 index,
@@ -801,12 +815,11 @@ fn execute_inner(
                 recording,
                 &background,
             )?;
-            let log_analysis_extrapolation = accepted.power.wavelength_mode
-                != ple_core::PowerWavelengthMode::PositionCalibration
-                && accepted.excitation_method == ple_core::ExcitationMethod::Calibration
-                && outside_excitation_calibration(&accepted_plan, actual);
             let sample = a.analyze(&accepted, &accepted_plan, &accepted.initial_analysis())?;
-            if log_analysis_extrapolation {
+            if acquisition_extrapolated
+                || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
+                    && outside_excitation_calibration(&accepted_plan, actual))
+            {
                 recording.excitation_extrapolated(index, repeat, actual)?;
             }
             recording.sample(&sample, &background)?;
@@ -863,7 +876,7 @@ fn acquire_point(
     events: &mpsc::Sender<Event>,
     recording: &mut Recording,
     bg: &Spectrum,
-) -> Result<Acquisition, RunError> {
+) -> Result<(Acquisition, bool), RunError> {
     check_stop(stop)?;
     let (power_w, power_time, sensor_wavelength, power_hardware, power_observation) =
         if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration {
@@ -907,11 +920,9 @@ fn acquire_point(
         corrected_counts: Vec::new(),
     };
     recording.acquired(&acquired)?;
-    if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration
-        && outside_excitation_calibration(plan, actual)
-    {
-        recording.excitation_extrapolated(index, repeat, actual)?;
-    }
+    let excitation_extrapolated = c.power.wavelength_mode
+        == ple_core::PowerWavelengthMode::PositionCalibration
+        && outside_excitation_calibration(plan, actual);
     if !matching_acquisition_settings(&acquired.spectrum.settings, &bg.settings) {
         return Err("LightField settings changed after BG; raw acquisition retained".into());
     }
@@ -923,7 +934,7 @@ fn acquire_point(
     {
         return Err("Power normalization overflow; raw acquisition retained".into());
     }
-    Ok(acquired)
+    Ok((acquired, excitation_extrapolated))
 }
 
 fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {

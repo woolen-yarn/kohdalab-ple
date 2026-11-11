@@ -56,6 +56,10 @@ struct PleApp {
     api: Option<api_ui::Runtime>,
     api_cleanup: bool,
     cleanup_errors: [Option<String>; 3],
+    run_unconfirmed: Option<String>,
+    recovery_stop_requested: bool,
+    recovery_reconnect_pending: [bool; 3],
+    recovery_disconnect_confirmed: [bool; 3],
     plot_cache: Option<presentation::PlotDataCache>,
     config: Config,
     connected: [bool; 3],
@@ -150,6 +154,10 @@ impl PleApp {
             api: launch.api_server.map(api_ui::Runtime::new),
             api_cleanup: false,
             cleanup_errors: Default::default(),
+            run_unconfirmed: None,
+            recovery_stop_requested: false,
+            recovery_reconnect_pending: [false; 3],
+            recovery_disconnect_confirmed: [false; 3],
             plot_cache: None,
             config,
             connected: [false; 3],
@@ -233,7 +241,12 @@ impl PleApp {
         self.start_for(None);
     }
     fn cleanup_error(&self) -> Option<String> {
-        self.cleanup_errors.iter().flatten().next().cloned()
+        self.cleanup_errors
+            .iter()
+            .flatten()
+            .next()
+            .cloned()
+            .or_else(|| self.run_unconfirmed.clone())
     }
     fn recovery_reason(&self) -> Option<String> {
         let (pending, error) = self.controller.stop_status();
@@ -242,6 +255,10 @@ impl PleApp {
         } else {
             error.or_else(|| self.cleanup_error())
         }
+    }
+    fn retry_stop(&mut self) {
+        self.recovery_stop_requested = self.run_unconfirmed.is_some();
+        self.controller.stop();
     }
     fn start_for(&mut self, external_id: Option<String>) {
         if let Some(reason) = self.recovery_reason() {
@@ -326,6 +343,20 @@ impl PleApp {
                         }
                     }
                 }
+                Event::DeviceConfirmed { device, connected } => {
+                    let i = match device {
+                        "spectrometer" => 0,
+                        "stage" => 1,
+                        _ => 2,
+                    };
+                    if self.run_unconfirmed.is_some() {
+                        if !connected {
+                            self.recovery_disconnect_confirmed[i] = true;
+                        } else if self.recovery_disconnect_confirmed[i] {
+                            self.recovery_reconnect_pending[i] = false;
+                        }
+                    }
+                }
                 Event::Telemetry {
                     device,
                     value,
@@ -363,8 +394,8 @@ impl PleApp {
                         }
                         Err(e) => {
                             self.state = "Manual move stopped / failed".into();
-                            self.log(&e);
-                            self.message = Some(e);
+                            self.log(e.to_string());
+                            self.message = Some(e.to_string());
                         }
                     }
                 }
@@ -457,6 +488,14 @@ impl PleApp {
                     self.run_dir = path;
                 }
                 Event::Finished { state, error } => {
+                    if matches!(state, engine::RunState::InterruptedUnconfirmed) {
+                        self.run_unconfirmed = Some(state.label().into());
+                        self.recovery_stop_requested = false;
+                        // The run outcome does not identify a device. Require all
+                        // three confirmed reconnects, or an explicit recovery Stop.
+                        self.recovery_reconnect_pending = [true; 3];
+                        self.recovery_disconnect_confirmed = [false; 3];
+                    }
                     self.busy = false;
                     self.finished_elapsed = self.started.map(|t| t.elapsed().as_secs_f64());
                     self.awaiting = 0;
@@ -469,6 +508,21 @@ impl PleApp {
                 }
             }
             self.api_observe(note);
+        }
+        if self.run_unconfirmed.is_some()
+            && (self.recovery_stop_requested
+                || !self
+                    .recovery_reconnect_pending
+                    .iter()
+                    .any(|pending| *pending))
+            && !self.busy
+            && !self.manual_moving
+            && !self.spectrometer_configuring
+            && self.cleanup_errors.iter().all(Option::is_none)
+            && self.controller.stop_status() == (false, None)
+        {
+            self.run_unconfirmed = None;
+            self.recovery_stop_requested = false;
         }
     }
 }

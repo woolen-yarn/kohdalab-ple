@@ -1350,9 +1350,13 @@ impl PleApp {
                 .show(ctx, |ui| {
                     ui.set_width(420.);
                     ui.colored_label(ORANGE, reason);
-                    ui.label("Start, Move and Apply wait for confirmed device state. Check the equipment, then retry Stop or disconnect and reconnect.");
-                    if ui.add_enabled(!pending, egui::Button::new("Retry Stop / verify idle")).clicked() {
-                        self.controller.stop();
+                    if self.cleanup_errors[engine::CleanupCause::Shutter as usize].is_some() {
+                        ui.label("Start, Move and Apply wait for confirmed shutter closure. Disconnect and reconnect the spectrometer; disconnect confirms the shutter is closed. If closure fails, check the equipment and retry disconnect.");
+                    } else {
+                        ui.label("Start, Move and Apply wait for confirmed device state. Check the equipment, then retry Stop or disconnect and reconnect all devices.");
+                        if ui.add_enabled(!pending, egui::Button::new("Retry Stop / verify idle")).clicked() {
+                            self.retry_stop();
+                        }
                     }
                 });
         }
@@ -1562,6 +1566,223 @@ mod tests {
 
         cleanup(CleanupCause::Stage, Ok(()));
         app.events();
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(app.busy);
+    }
+
+    #[test]
+    fn interrupted_run_requires_explicit_retry_and_all_cleanup_confirmations() {
+        use crate::engine::{CleanupCause, RunState};
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        app.connected = [true; 3];
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        sender
+            .send(Event::Finished {
+                state: RunState::InterruptedUnconfirmed,
+                error: None,
+            })
+            .unwrap();
+        app.events();
+        assert!(app.recovery_reason().is_some());
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(!app.busy);
+        sender
+            .send(Event::Cleanup {
+                cause: CleanupCause::SpectrometerStop,
+                result: Ok(()),
+            })
+            .unwrap();
+        app.events();
+        assert!(app.run_unconfirmed.is_some());
+        sender
+            .send(Event::Cleanup {
+                cause: CleanupCause::Stage,
+                result: Err("stage unconfirmed".into()),
+            })
+            .unwrap();
+        app.retry_stop();
+        app.events();
+        assert!(app.run_unconfirmed.is_some());
+        sender
+            .send(Event::Cleanup {
+                cause: CleanupCause::Stage,
+                result: Ok(()),
+            })
+            .unwrap();
+        app.events();
+        assert!(app.recovery_reason().is_none());
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(app.busy);
+    }
+
+    #[test]
+    fn stopped_and_failed_runs_do_not_set_unconfirmed_latch() {
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        for state in [engine::RunState::Stopped, engine::RunState::Failed] {
+            sender
+                .send(Event::Finished {
+                    state,
+                    error: Some("arbitrary error containing unconfirmed".into()),
+                })
+                .unwrap();
+            app.events();
+            assert!(app.recovery_reason().is_none());
+        }
+    }
+
+    #[test]
+    fn interrupted_run_requires_every_device_reconnect_when_cause_is_unknown() {
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        sender
+            .send(Event::Finished {
+                state: engine::RunState::InterruptedUnconfirmed,
+                error: None,
+            })
+            .unwrap();
+        app.events();
+        // Connection state alone includes failed disconnects and monitor events.
+        for device in ["spectrometer", "stage", "power"] {
+            sender
+                .send(Event::Device {
+                    device,
+                    connected: true,
+                })
+                .unwrap();
+            sender
+                .send(Event::DeviceConfirmed {
+                    device,
+                    connected: true,
+                })
+                .unwrap();
+        }
+        app.events();
+        assert!(app.run_unconfirmed.is_some());
+        for device in ["spectrometer", "stage", "power"] {
+            sender
+                .send(Event::DeviceConfirmed {
+                    device,
+                    connected: false,
+                })
+                .unwrap();
+            app.events();
+            assert!(app.run_unconfirmed.is_some());
+            sender
+                .send(Event::DeviceConfirmed {
+                    device,
+                    connected: true,
+                })
+                .unwrap();
+            app.events();
+            assert_eq!(app.run_unconfirmed.is_none(), device == "power");
+        }
+        app.start();
+        assert!(app.busy);
+    }
+
+    #[test]
+    fn shutter_recovery_dialog_documents_disconnect_and_hides_retry_stop() {
+        fn text(shape: &egui::epaint::Shape) -> String {
+            match shape {
+                egui::epaint::Shape::Text(t) => t.galley.text().to_owned(),
+                egui::epaint::Shape::Vec(shapes) => shapes.iter().map(text).collect(),
+                _ => String::new(),
+            }
+        }
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        app.cleanup_errors[engine::CleanupCause::Shutter as usize] =
+            Some("close unconfirmed".into());
+        frame(&mut app, &ctx, vec![]);
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(rect(0., 0., 1566., 900.)),
+                ..Default::default()
+            },
+            |ctx| app.draw(ctx),
+        );
+        let rendered: String = output.shapes.iter().map(|s| text(&s.shape)).collect();
+        assert!(rendered.contains("Disconnect and reconnect the spectrometer"));
+        assert!(!rendered.contains("Retry Stop / verify idle"));
+    }
+
+    #[test]
+    fn shutter_disconnect_requires_confirmed_close_before_reconnect_and_start() {
+        use crate::backend::Spectrometer;
+        use crate::engine::CleanupCause;
+        use std::sync::{Mutex, atomic::AtomicBool};
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fake_bridge.py");
+        let allow_close = dir.path().join("allow-close");
+        std::fs::write(&script, format!(
+            "import sys,json,pathlib\nfor line in sys.stdin:\n r=json.loads(line);op=r['op'];closed=pathlib.Path({allow}).exists()\n print(json.dumps({{'id':r['id'],'ok':True,'result':{{'closed':closed,'shutdown':True,'settings':{{}}}}}}),flush=True)\n if op=='shutdown':break\n",
+            allow=serde_json::to_string(&allow_close.to_string_lossy()).unwrap()
+        )).unwrap();
+        let mut config = Config {
+            mode: Mode::Hardware,
+            ..Default::default()
+        };
+        config.spectrometer.bridge_script = script.to_string_lossy().into();
+        config.background.mode = BackgroundMode::Automatic;
+        config.background.backend = ShutterBackend::Mff;
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        app.connected = [true; 3];
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        let mut spec = Spectrometer::connect(
+            &config,
+            sender.clone(),
+            &Mutex::new(None),
+            Arc::new(Mutex::new(None)),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        spec.prepare_shutter(&config).unwrap();
+        sender
+            .send(Event::Cleanup {
+                cause: CleanupCause::Shutter,
+                result: Err("close unconfirmed".into()),
+            })
+            .unwrap();
+        app.events();
+        let (cause, error) = spec.disconnect(&sender).unwrap_err();
+        assert!(matches!(cause, CleanupCause::Shutter));
+        // The coordinator forwards failed disconnect confirmation by cause.
+        sender
+            .send(Event::Cleanup {
+                cause,
+                result: Err(error),
+            })
+            .unwrap();
+        app.events();
+        assert!(app.recovery_reason().is_some());
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(!app.busy);
+        std::fs::write(&allow_close, "ready").unwrap();
+        spec.disconnect(&sender).unwrap();
+        app.events();
+        assert!(app.recovery_reason().is_none());
+        let mut reconnected = Spectrometer::connect(
+            &config,
+            sender.clone(),
+            &Mutex::new(None),
+            Arc::new(Mutex::new(None)),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        reconnected.disconnect(&sender).unwrap();
         frame(&mut app, &ctx, vec![]);
         click(&mut app, &ctx, "run_start");
         assert!(app.busy);
