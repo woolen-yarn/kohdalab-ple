@@ -1,11 +1,29 @@
 # Changelog / 変更履歴
 
+## Unreleased / 未リリース
+
 ## 0.3.11 — 2026-11-10
 
 - Save analysis CSV, raw CSV, lifecycle log and conditions JSON as a linked, hashed measurement bundle; retain old data and configuration compatibility. / 解析CSV・raw CSV・ライフサイクルlog・条件JSONを参照・ハッシュで結び、既存データ・設定の互換性を維持します。
 - Clarify stored units, native versus corrected readings, timestamps and original-data references without changing measurement control. / 保存単位・生値と補正後値・時刻・元データ参照を明確化し、測定制御は維持します。
 - Add flattened spectral-bin analysis with mm/nm/W/counts units and explicit spectrum/metadata references; retain SPE, background and full-run Open Results. / mm/nm/W/countsを明記したスペクトルbin解析と元データ参照を追加し、SPE・背景・フォルダー全体のOpen Resultsを維持します。
 - Preserve actual/target position, native power value/unit, wavelength and acquisition times in raw events, including partial/error runs. / 部分保存・異常終了時も、実位置／指令値・native power値／単位・波長・取得時刻をrawイベントに残します。
+
+## 0.3.10 — 2026-11-10
+
+- Update the GUI to eframe/egui 0.34 and `read-fonts`, retain numeric-input feedback, and keep controller/API processing active when the window is covered. The minimum desktop Rust version is 1.92. / eframe/egui 0.34系と `read-fonts` に更新し、数値入力の反映表示を維持。ウィンドウが隠れても制御・API処理が進むよう描画から分離。デスクトップの最低Rust版は1.92。
+- Serialize shared Python control lease transitions and ignore retired heartbeats during reacquisition. Genuine lease loss remains an error. / 共通Python制御クライアントの制御権解放・再取得を直列化し、以前のheartbeatによる再取得の誤失敗を防止。実際の制御権喪失は引き続きエラー。
+
+[Release v0.3.10](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.10) · [PR #9](https://github.com/woolen-yarn/kohdalab-ple/pull/9)
+
+## 0.3.9 — 2026-11-06
+
+- Preserve native meter values and units with converted watts, wavelength and acquisition timing. Verify duplicated observations exactly, including picowatt readings and timestamps. / ネイティブ電力値・単位を換算W・波長・取得時刻と共に保存し、pW領域の値や時刻を含めた同一観測の転記値を厳密に照合。
+- Match BG using ROI/binning, ADC/readout, temperature setpoint and online correction settings, including hashes for enabled flatfield/blemish references. Keep raw acquisitions when later validation fails. / ROI・binning・ADC・読出し・温度設定値・オンライン補正条件でBGを照合。有効なflatfield／blemish参照のハッシュを記録し、検証失敗時も取得済み生データを保持。
+- Bundle the pinned Shutter 0.6.6 companion with its operation journal. / 操作履歴を保存するShutter 0.6.6固定版をWindowsパッケージに同梱。
+- Publish the Preview and correct the Shutter attribution in the repository notice. / Previewを一般公開し、リポジトリの第三者表記にあるShutterの出典を訂正。
+
+[Release v0.3.9](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.9) · [PR #6](https://github.com/woolen-yarn/kohdalab-ple/pull/6)
 
 ## 0.3.8 — 2026-11-05
 
@@ -30,8 +48,6 @@
 - Add the authenticated local Control Protocol 1 adapter and shared Python SDK. Camera exposes read-only status/configuration; other apps retain their native ownership and safety policies.
 - Align common discovery, receipts, structured errors, PR templates and release categories. Existing measurement data and native clients remain supported.
 - GUI共通API・独立したPython SDK・PR/Releaseの記載項目を統一。既存測定とデータ形式を維持します。
-
-## Unreleased / 未リリース
 
 ## 0.3.4 — 2026-10-29
 

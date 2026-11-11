@@ -10,15 +10,17 @@ TRKRと同じ `eframe/egui` / `egui_plot` 系のネイティブGUIを使用し�
 - 右：進捗、ピーク・積分値、保存先、ステータスとログ。
 - BG差し引きは常時適用。波長／エネルギー表示、パワー正規化、結果再読込。
 
-**v0.2.1：実機確認に渡すリリース候補です。模擬機器と外部APIを自動検証し、Windows x64用exeをクロスビルドしています。Windows上の起動・SDK接続・実測・停止は測定PCでの確認が必要です。**
+**現行の配布版は実機確認用Previewです。配布CIのソフトウェア試験と、測定PCでのGUI起動・SDK接続・実測・停止確認を区別します。**
 
-[実機確認・合否記録の手順](../hardware-qualification.md) · [検証記録](../validation.md)
+[実機確認・合否記録の手順](hardware-qualification.md) · [配布検証記録](../validation/README.md)
 
-v0.2.1ではSDK失敗・タイムアウト時のStop確認、再接続時の旧接続の終了、復帰待ち画面、保存データの照合を強化しています。`Device recovery` が表示された場合は、機器状態を確認して `Retry Stop / verify idle`、必要なら切断・再接続で復帰します。待機中に次の測定や移動は開始しません。
+`Device recovery` が表示された場合は、機器状態を確認して `Retry Stop / verify idle` を使い、必要に応じて切断・再接続します。復帰を確認できるまで次の測定や移動は開始できません。
 
 ## 起動
 
-作業フォルダーの `dist/KohdaLab PLE.app` は、このMacで起動できるApple silicon版です。Rustの追加インストールなしでDemoを試せます。Windows x64版は `dist/kohdalab-ple-windows-x64.zip` です。展開後の `kohdalab-ple.exe` はRustをインストールせずに起動できます。実機用PythonとメーカーSDKは別途必要です。
+[配布版の導入手順](install.md)に従い、WindowsではSetup.exeでインストールしてスタートメニューから起動します。portable ZIPでは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple siliconでは `KohdaLab PLE.app` を起動してDemoや結果確認を行えます。配布版の起動にRustは不要です。実機取得にはWindows、64-bit PythonとメーカーSDKが必要です。
+
+初回の通常起動では、設定がなければ `~/.kohdalab/ple/config/config.json`（Windowsでは `%USERPROFILE%\.kohdalab\ple\config\config.json`）が作られます。既定の保存先は同じアプリディレクトリの `results` です。既存の設定を読み込むときは `Config` の `Browse`／`Load` を使います。
 
 ![模擬測定画面](../images/ple-demo.png)
 
@@ -30,7 +32,7 @@ Rust開発環境を用意し、リポジトリのルートから実行します�
 cargo run --locked --bin kohdalab-ple
 ```
 
-GUIはDemoモードで起動します。機器への自動接続・移動は行いません。
+機器なしで確認する場合は `Demo` を選びます。初回の標準設定はDemoです。通常起動時に自動接続・移動は行いません。
 `Config` の `All Connect`、または各機器の `Device` を開いて `Connect` を押し、中央の `Run > Start` で測定を準備します。`Config` カードの右クリックメニューでDemo／Hardwareを切り替えます。モード切替は全機器の切断後に行います。
 
 機器に触れず、接続から測定終了まで通す操作確認：
@@ -49,7 +51,7 @@ cargo run --locked --bin kohdalab-ple -- --auto-demo
 6. `Continue` で解析条件を確定し、残りの取得へ進みます。最初のPLは1点目として使い、再取得しません。選択が不正な場合は同じPLを保持して修正を待ちます。
 7. 自動シャッター方式では完了・停止・エラー時に遮光を要求し、確認結果をログへ残します。手動方式では遮光操作をユーザーが行います。
 
-LightField内のBG補正を明示的に無効にし、読戻しで確認します。BGは露光・フレーム合成・中心波長・グレーティングの読戻し値と波長配列が一致する取得へだけ適用します。負の差分も保持します。LightFieldの詳細設定も実機側で確認してください。
+LightField内のBG補正を無効にし、読戻しで確認します。波長配列と取得設定に加え、ROI／binning、ADC／読出し、温度設定値、オンライン補正の読戻しをBGと照合します。必須設定を確認できない場合は解析に進まず、取得済みの生データを保持します。負の差分は保存します。詳細は[測定・保存仕様](../reference/measurement.md)と[実機確認](hardware-qualification.md)を参照してください。
 
 表示中のHeatmapまたはCONEX対励起波長プロットをクリックすると、上段左が選択データになります。Plotツールバーの右クリックメニューで `Follow latest acquisition` を選ぶと最新取得へ戻ります。重ね合わせは描画負荷を抑えるため全取得範囲から先頭と最新を含む最大8曲線を表示します。すべての取得データは保存します。
 
@@ -74,14 +76,14 @@ python -m pip install -r bridge/requirements.txt
 - LightField：`LIGHTFIELD_ROOT`、experiment名、分光器中心波長を設定。gratingが空ならテンプレートの値を保持します。既存の手動起動LightFieldへの接続は実装せず、ブリッジが所有するインスタンスを起動します。
 - CONEX：リモートPCのhost / portと、そのPC上のCOMを指定します。Deviceの `Remote JSON` は付属の [CONEXサーバー](../../bridge/README.md) に対応し、移動中の位置読取りと別接続からのStopを使います。旧zipのサーバーには `Legacy TCP` を選びます。既定の接続確認はGETのみで、CHECKによる初期化は明示的に有効化した場合に限ります。旧サーバーは移動中の監視とStopを扱えません。
 - パワーメーター：VISA resourceと、元zipから展開した `ThorlabsPowerMeter.py` のあるフォルダーを指定します。`Thorlabs_DotNet_dll`と公式DLLはその配下に置きます。DLLは本アプリへ再配布しません。
-- センサー波長は固定、または位置・励起波長の事前校正に追従できます。Powerの詳細設定で選び、Analysisで校正点を入力します。追従時は露光前に波長設定と読戻し・パワー読取りを行い、取得スペクトルから検出した励起波長との許容差も確認します。読戻したセンサー波長・パワー・時刻、光路係数を掛けた試料上推定パワーを別々に保存します。校正点は実測値を使用し、校正範囲外への外挿は行いません。
+- センサー波長は固定、または位置・励起波長の事前校正に追従できます。Powerの詳細設定で選び、Analysisで校正点を入力します。追従時は露光前に波長設定と読戻し・パワー読取りを行い、取得スペクトルから検出した励起波長との許容差も確認します。読戻したセンサー波長・パワー・時刻、光路係数を掛けた試料上推定パワーを別々に保存します。校正点は実測値を使い、走査の指令位置が校正範囲内に収まるようにします。
 - CONEXの可動範囲は0–25 mmです。DeviceのSoft min / maxでこの範囲内に制限を狭められます。接続後、DeviceのGo to (mm)へ絶対位置を入力してMoveで手動移動できます。測定中・別の手動移動中は操作をロックし、Stopは有効です。分光器・パワーメーターの接続は手動移動に不要です。
 
-詳細は [ブリッジ仕様](../../bridge/README.md) と [測定・保存仕様](../measurement.md)。
+詳細は [ブリッジ仕様](../../bridge/README.md) と [測定・保存仕様](../reference/measurement.md)。
 
 ## Python / Jupyterからの外部操作
 
-IV/TRKRと同じく、GUIが機器接続を所有するローカルTCP APIを追加しました。既定では無効で、`--gui-api --config experiment.json` で有効にします。Pythonクライアントは `bindings/python` にあります。
+GUIが機器接続を所有し、同じPCのPython/JupyterからローカルAPIを使えます。通常起動では既定で有効です。`--no-gui-api` で無効にできます。Pythonクライアントは `bindings/python` にあります。
 
 ```sh
 python -m pip install ./bindings/python
@@ -89,7 +91,7 @@ python -m pip install ./bindings/python
 
 `GuiPLE` は状態参照、排他的lease、接続・切断、0–25 mmの手動移動、測定開始、BG・信号確認、最初のPL取得後の解析選択、接続中の分光器設定適用・読戻し、結果のID別待機、Stop完了待ちに対応します。操作中の設定変更はキューへ貯めず拒否し、同じ要求IDの再送で二重測定しません。GUI側のStopとTake controlも残します。
 
-[外部APIの仕様と使用例](../gui-api.md) · [IV/TRKRとの比較・設計監査](../design-audit.md)
+[外部APIの仕様と使用例](../reference/gui-api.md)
 
 ## 保存形式
 
@@ -102,6 +104,10 @@ sample_<run-id>/
   status.previous.json        # 直前の状態（更新時に保持）
   events.jsonl                # 移動・取得・保存・終了の履歴
   points.csv                  # 位置・励起波長・パワー・PL指標
+  analysis.csv                # 波長ビン単位の解析・表示用CSV
+  analysis.raw.csv            # 取得値・時刻・生データ参照を含むイベントCSV
+  analysis.log                # 測定の開始・進行・終了・失敗
+  analysis.run.json           # 測定条件・ファイル一覧・SHA-256
   raw/
     background.spe            # 実機のLightField生データ
     background.lightfield.csv # LightFieldの元エクスポート
@@ -117,6 +123,8 @@ sample_<run-id>/
     Y_18.6mm_40uW_p00000_r000.json
 ```
 
+4ファイルは同じrunのセットとして保管してください。Open Resultsと再解析には背景・SPE／スペクトル・確定条件を含むrunフォルダー全体を使います。[保存セットの仕様](../reference/measurement-output.md)と[保存整合性の確認](hardware-qualification.md#保存-run-の整合性検査)を参照してください。
+
 ファイル名の位置は実際の読戻し値、パワーは取得直前の測定値にSample factorを掛けた試料上推定値です。表示用に丸め、point/repeat番号で同名衝突を防ぎます。JSONには丸め前の値と時刻を保持します。
 
 Demoでは実際のSPEを生成せず、CSV・JSONに模擬データを記録します。模擬ファイルをSPEと偽って出力しません。
@@ -131,12 +139,13 @@ RunのStopで以後の取得を止め、LightFieldへ中止を要求します。
 
 ## 開発と検証
 
-この作業環境（macOS / Apple silicon）でRust・Pythonの自動テスト、厳格なClippy、波長／eVのGUI模擬測定を確認しました。実機・Windowsでの動作確認とは別です。
+各配布版のソフトウェア・パッケージ検証結果は[配布検証記録](../validation/README.md)を参照してください。下記は開発用の自動検査です。文書検査にはPython 3.11以降を使います。実機と測定PCでのWindows GUI操作は現地で確認します。
 
 ```sh
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 python3 -m unittest discover -s tests -v
+python3 scripts/check_docs.py
 ```
 
 ```text

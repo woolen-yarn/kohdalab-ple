@@ -1,5 +1,6 @@
 {
   "version": "0.2.1",
+  "note": "0.2.1時点の履歴 / Historical evidence for v0.2.1",
   "rust_tests": 75,
   "python_tests": 69,
   "rust_clippy": "passed, warnings denied",
