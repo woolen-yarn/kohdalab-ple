@@ -188,7 +188,7 @@ impl PleApp {
                 "methods":["control.describe","control.status","control.devices","control.config","control.plan","control.output","control.spectrum","control.background","control.preview","control.shutter","control.acquire","control.heartbeat","control.release","control.result","control.configure","control.set_plan","control.set_background","control.set_output","control.apply_spectrometer","control.connect","control.disconnect","control.start","control.move","control.confirm_background","control.confirm_signal","control.select_analysis","control.stop"],
                 "actions":["capabilities","status","devices","config","plan","output","spectrum","background","preview","shutter","acquire","heartbeat","release","configure","set_plan","set_background","set_output","apply_spectrometer","connect","disconnect","start","move","confirm_background","confirm_signal","select_analysis","result","stop"],
                 "history_limit":api::HISTORY_LIMIT,"command_history_limit":api::HISTORY_LIMIT,"lease_timeout_s":10,"headless":false,"arbitrary_device_commands":false,
-                "safety":{"lease_timeout_seconds":10,"heartbeat_seconds":2,"on_disconnect":"stop","on_release":"stop","stop_requires_lease":true,"stop_policy_defaults":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true}},
+                "safety":{"lease_timeout_seconds":10,"heartbeat_seconds":2,"on_disconnect":"stop","on_release":"stop","stop_requires_lease":false,"stop_policy_defaults":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true}},
                 "safety_policy":{"stop_on_disconnect":true,"stop_on_error":true,"stop_on_timeout":true,"automatic_shutter":self.config.background.mode==BackgroundMode::Automatic,"shutter_backend":self.config.background.backend,"shutter_feedback":"controller_state_not_optical_sensor","manual_beam_block_required":self.config.background.mode==BackgroundMode::Manual},
                 "stage_travel_mm":[0,25],"confirmation_required":true}),
                 );
@@ -916,6 +916,7 @@ mod tests {
             json!({"action":"control_describe","_control_method":"describe"}),
         )
         .unwrap();
+        assert_eq!(description["safety"]["stop_requires_lease"], false);
         for method in [
             "control.configure",
             "control.set_plan",

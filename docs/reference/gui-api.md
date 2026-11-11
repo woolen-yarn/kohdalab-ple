@@ -11,7 +11,7 @@ kohdalab-ple --gui-api --config experiment.json
 python -m pip install ./bindings/python
 ```
 
-`127.0.0.1`の空きポートだけで待ち受け、`~/.kohdalab/ple/run/ple-gui-<pid>-<instance>.json`へ発見用ファイルを作ります。`--api-dir DIRECTORY`で専用フォルダーを指定できます。Unixの発見ファイルは0600です。トークンはファイルにのみ記録し、通常ログに出しません。正常終了時に発見ファイルを除去します。クラッシュ後の古いファイルはクライアントがcanonical run/と旧control/を読取り専用の疎通確認で探索・重複排除します。
+`127.0.0.1`の空きポートだけで待ち受け、`~/.kohdalab/ple/run/ple-gui-<pid>-<instance>.json`へ発見用ファイルを作ります。`--api-dir DIRECTORY`で専用フォルダーを指定できます。Unixの発見ファイルは0600です。Windowsでは既定の発見ファイルの保護はユーザープロファイルのアクセス権に依存します。 `--api-dir` を使う場合は、同じユーザーだけがアクセスできるフォルダーを指定してください。トークンはファイルにのみ記録し、通常ログに出しません。正常終了時に発見ファイルを除去します。クラッシュ後の古いファイルはクライアントがcanonical run/と旧control/を読取り専用の疎通確認で探索・重複排除します。
 
 ```python
 from kohdalab_ple import GuiPLE, GuiClient, find_binary
@@ -33,7 +33,7 @@ ple = GuiPLE(endpoint="/path/to/ple-gui-....json")
 
 `with GuiPLE(...) as ple:` または `acquire()` で排他的なleaseを取得します。GUI側は設定・接続・Start・手動移動をロックし、プロットの閲覧、Stop、Take controlを残します。ハートビートの有効期限は10秒です。失効・Take controlは所有者を恒久的に失効させ、Stopを要求します。同じクライアントは再取得せず、新しいクライアントを作ります。正常なrelease後は同じクライアントを再利用できます。
 
-Stopは認証トークンがあればleaseなしでも要求できます。Stopの返事は停止要求の受理であり、物理的な停止完了ではありません。`stop_and_wait()` は測定ワーカー・接続処理・CONEXとLightFieldのStop応答待ちを監視し、未確認の状態を成功扱いしません。自動シャッターは閉鎖読戻しを確認します。手動BG方式の遮光はユーザーの操作です。
+Stopは認証トークンがあればleaseなしでも要求できます。 `capabilities` と `control.describe` は `safety.stop_requires_lease: false` を返します（v0.3.12では値が `true` ですが、Stopの処理は同じです）。Stopの返事は停止要求の受理であり、物理的な停止完了ではありません。`stop_and_wait()` は測定ワーカー・接続処理・CONEXとLightFieldのStop応答待ちを監視し、未確認の状態を成功扱いしません。自動シャッターは閉鎖読戻しを確認します。手動BG方式の遮光はユーザーの操作です。
 
 Pythonの既定動作は、待機の期限切れ、変更要求の応答喪失、失敗した測定の待機終了時にStopを要求します。応答を失った操作を自動再送しません。`close()` / context終了は停止完了を待ってleaseを解放します。`stop_on_timeout=False` はPython側の期限切れ停止を明示的に無効化する選択肢ですが、lease失効時のGUI Stopは残ります。
 

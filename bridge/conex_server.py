@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import argparse
 import hmac
+import ipaddress
 import json
 import math
 import os
 import sys
 from pathlib import Path
+import socket
 import socketserver
 import threading
 import time
@@ -213,7 +215,7 @@ class ConexRequestServer(socketserver.ThreadingTCPServer):
             raise ConexError("request must be an object")
         if self.token is not None:
             supplied = request.get("token")
-            if not isinstance(supplied, str) or not hmac.compare_digest(supplied, self.token):
+            if not isinstance(supplied, str) or not hmac.compare_digest(supplied.encode("utf-8"), self.token.encode("utf-8")):
                 raise ConexError("unauthorized")
         if request.get("revision") != REVISION:
             raise ConexError(f"request revision must be {REVISION}")
@@ -258,9 +260,20 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="bind host; use 0.0.0.0 only intentionally on a lab PC")
     parser.add_argument("--sdk-dir",default=os.environ.get("CONEX_SDK_DIR"),help="folder containing Newport.CONEXCC.CommandInterface.dll on the controller PC")
     parser.add_argument("--port", type=int, default=9000)
-    parser.add_argument("--token", default=os.environ.get("KOHDA_CONEX_TOKEN"), help="optional shared token (or KOHDA_CONEX_TOKEN)")
+    parser.add_argument("--token", default=os.environ.get("KOHDA_CONEX_TOKEN"), help="shared token required for non-loopback binds (or KOHDA_CONEX_TOKEN)")
     parsed = parser.parse_args()
-    server = ConexRequestServer((parsed.host, parsed.port), ConexController(sdk_directory=parsed.sdk_dir), parsed.token)
+    host = parsed.host
+    token = parsed.token if parsed.token and parsed.token.strip() else None
+    if token is None:
+        # Bind to the exact IPv4 address checked here so a hostname is not
+        # resolved a second time by the server.
+        try:
+            host = socket.gethostbyname(host)
+        except OSError as error:
+            parser.error(f"could not resolve --host {host!r}: {error}")
+        if not ipaddress.IPv4Address(host).is_loopback:
+            parser.error("non-loopback --host requires --token or KOHDA_CONEX_TOKEN")
+    server = ConexRequestServer((host, parsed.port), ConexController(sdk_directory=parsed.sdk_dir), token)
     try:
         server.serve_forever()
     finally:

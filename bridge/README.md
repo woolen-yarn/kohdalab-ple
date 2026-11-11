@@ -98,8 +98,9 @@ then closes the connection. Start it on the controller PC, for example:
 python bridge/conex_server.py --port 9000 --token $env:KOHDA_CONEX_TOKEN
 ```
 
-Use `--host 0.0.0.0` only deliberately on a protected laboratory network. A
-configured token (CLI or `KOHDA_CONEX_TOKEN`) is compared in constant time.
+Use `--host 0.0.0.0` only deliberately on a protected laboratory network.
+Non-loopback binds require a nonempty token (`--token` or `KOHDA_CONEX_TOKEN`),
+which is compared in constant time.
 Requests have `{id, revision:1, op, args, token?}` and replies have
 `{id, ok, result, error}`. Operations are `hello`, `connect`, `status`, `move`,
 and `stop`. `hello` reports protocol `kohdalab-conex`, revision 1,
