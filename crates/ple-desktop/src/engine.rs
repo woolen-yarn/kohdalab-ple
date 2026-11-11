@@ -426,11 +426,17 @@ impl Controller {
                             match recording.finish(state.recorded_status(), error.as_deref()) {
                                 Ok(()) => (state, error),
                                 Err(e) => (
-                                    RunState::Failed,
-                                    Some(format!(
-                                        "{}; final status could not be saved: {e}",
-                                        error.unwrap_or_default()
-                                    )),
+                                    if matches!(state, RunState::InterruptedUnconfirmed) {
+                                        state
+                                    } else {
+                                        RunState::Failed
+                                    },
+                                    Some(match error {
+                                        Some(original) => {
+                                            format!("{original}; finalizing recording: {e}")
+                                        }
+                                        None => format!("Finalizing recording: {e}"),
+                                    }),
                                 ),
                             };
                         let _ = events_tx.send(Event::Finished {

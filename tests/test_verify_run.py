@@ -113,6 +113,18 @@ class VerifyRunTests(unittest.TestCase):
         self.assertFalse(report["ok"])
         self.assertTrue(any("log_sha256" in error for error in report["errors"]))
 
+    def test_incomplete_bundle_reports_recorded_reason(self) -> None:
+        run = self._run_fixture()
+        self._add_bundle(run)
+        path = run / "analysis.run.json"
+        manifest = json.loads(path.read_text())
+        manifest.update(file_hashes=None, hash_verification={"status": "incomplete"},
+                        error="Sample count mismatch in metadata/")
+        path.write_text(json.dumps(manifest))
+        report = verify_run.verify(run, 1e-8)
+        self.assertFalse(report["ok"])
+        self.assertIn("analysis.run.json: Sample count mismatch in metadata/", report["errors"])
+
     def test_processed_arithmetic_mutation_fails(self) -> None:
         run = self._run_fixture()
         path = run / "processed" / "point_00000_repeat_000.csv"
