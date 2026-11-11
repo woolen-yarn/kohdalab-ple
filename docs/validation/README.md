@@ -4,6 +4,7 @@
 
 | Preview | 変更の要約 | 配布CIの記録 |
 | --- | --- | --- |
+| [v0.3.12](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.12) | 復帰ラッチの原因別化、校正端での許容差内外挿、bridgeログ・位置監視の堅牢化、入口文書の更新。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.12/VALIDATION.json) |
 | [v0.3.11](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.11) | 解析CSV・raw CSV・log・条件JSONの4ファイル保存セットとSHA-256。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.11/VALIDATION.json) |
 | [v0.3.10](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.10) | GUI依存の更新、描画と制御処理の分離、共通SDKの制御権競合修正。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.10/VALIDATION.json) |
 | [v0.3.9](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.9) | ネイティブ電力値・単位の保存、BG照合の拡張、Shutterの操作履歴。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.9/VALIDATION.json) |
