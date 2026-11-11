@@ -14,6 +14,7 @@
 - [Repository layout / リポジトリ構成](development/repository-layout.md)
 - [Build and release / ビルド・配布](development/releasing.md)
 - [Architecture and TRKR/IV comparison at v0.2.0 / 0.2.0時点の設計監査](development/design-audit.md)
+- [Status and next steps, 2026-11 / 現状と次の作業の提案](development/status-and-next-steps-2026-11.md)
 - [Future CONEX CC server integration / サーバー受け入れ先](../servers/conex-cc/README.md)
 
 ## Reference / 仕様
