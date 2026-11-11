@@ -4,9 +4,9 @@
 
 ## Application / アプリ
 
-Download Setup.exe (recommended) or the whole portable ZIP and its SHA-256 file from [GitHub Releases](https://github.com/woolen-yarn/kohdalab-ple/releases). Extract all files together. Rust is not needed. Demo needs neither Python nor instruments; hardware acquisition uses a Windows PC, 64-bit Python, and the SDK adapters below.
+Choose the current Preview from the [Downloads table](../../README.md#downloads--ダウンロード) and check its SHA-256. On Windows x64, run Setup.exe with administrator privileges, then open **KohdaLab → PLE → KohdaLab PLE** from the Start menu. For the portable ZIP, extract all files and launch `kohdalab-ple.exe`. The Apple-silicon app is for Demo and reviewing saved results. Packaged applications need no Rust. Demo needs no Python or instruments. Hardware acquisition requires Windows, 64-bit Python and the manufacturer software listed below.
 
-[GitHub Releases](https://github.com/woolen-yarn/kohdalab-ple/releases)からSetup.exeを取得してインストールしてください（管理者権限が必要です）。portable ZIPを使う場合はSHA-256も取得し、全体を展開してください。Rustは不要です。DemoはPython・機器不要ですが、実機取得にはWindows PC・64-bit Python・以下のSDKが必要です。macOS版はDemo・結果確認用です。
+[ダウンロード表](../../README.md#downloads--ダウンロード)から現行のPreviewを選び、SHA-256を照合します。Windows x64では管理者権限でSetup.exeを実行し、スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple silicon版はDemo・結果確認用です。配布版にRustは不要で、DemoはPython・機器不要です。実機取得にはWindows・64-bit Python・以下のメーカーソフトが必要です。
 
 ## Application locations
 
@@ -23,13 +23,14 @@ uses `C:\Program Files\Kohdalab\KohdaLab PLE` and creates application-specific
 Start menu/desktop shortcuts. Updates activate a fully staged application directory, so removed helpers do not remain active. The previous application folder is retained as a sibling backup (its location is shown in Setup details). Uninstall removes only its packaged files and leaves user settings and measurements.
 The portable ZIP remains usable without application installation.
 
-Build Setup on Windows from a reviewed portable folder:
+To build Setup on Windows, use a reviewed portable folder and read the version from the workspace manifest with Python 3.11 or newer.
 
 ```powershell
-python scripts/build_windows_installer.py --payload-dir dist/kohdalab-ple-windows --version 0.3.4 --output dist/KohdaLab-PLE-0.3.4-Setup.exe
+$version = python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])"
+python scripts/build_windows_installer.py --payload-dir dist/kohdalab-ple-windows --version $version --output "dist/KohdaLab-PLE-$version-Setup.exe"
 ```
 
-Pass the actual Cargo package version. NSIS is required; the builder can obtain
+NSIS is required; the builder can obtain
 a pinned, checksum-verified copy if it is not installed.
 
 ## Manufacturer downloads / メーカー公式ダウンロード
@@ -43,7 +44,7 @@ Links checked 2026-10-29. Use the official download page rather than copying DLL
 | LightField | [LightField: Resources & Support → Software & Firmware](https://www.teledynevisionsolutions.com/products/lightfield/) | LightField installation including Add-in and Automation SDK; manufacturer account/license may be needed / Automation SDKを含むLightField。メーカーのログイン・利用資格が必要な場合あり | Acquisition PC / 取得PC |
 | CONEX CC | [Newport CONEX-CC: Resources → Software](https://www.newport.com/f/trb-actuator-conex-kits) | CONEX-CC installer and `Newport.CONEXCC.CommandInterface.dll`; see [official installation manual](https://www.newport.com/medias/sys_master/images/images/hc3/h1d/9044105035806/CONEX-CC-Controller-GUI-Manual.pdf) / インストーラー・Command Interface DLL | Controller PC only for remote operation / リモート運用ではCONEX制御PCのみ |
 | Thorlabs power meter | [Legacy power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [Optical Power Monitor](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) | Driver compatible with legacy `ThorlabsPowerMeter.py`, `TLPM_64.dll`, `.NET Interop`; newer TLPMX is a different API / 元PythonとTLPM系DLLに合う版。TLPMX系をそのまま差し替えない | Meter-connected PC / パワーメーター接続PC |
-| Automatic BG / 自動BG | [PLE Windows同梱版](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.4) | GUI API protocol 2対応の同梱GUI、STATE対応firmware。PLEはPicoへ直接接続しない | Acquisition PC / 取得PC |
+| Automatic BG / 自動BG | [Bundled Shutter setup / 同梱Shutterの設定](../reference/shutter.md) | GUI API protocol 2対応の同梱GUI、STATE対応firmware。PLEはPicoへ直接接続しない | Acquisition PC / 取得PC |
 | Optional MFF shutter / 任意のMFF | [Thorlabs motion software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) | Appropriate USB/Kinesis prerequisites for the MFF/pylablib setup / 使用するMFFとpylablibの方式に合うUSB・Kinesis環境 | Shutter-connected PC / シャッター接続PC |
 
 LightField SDK information: [manufacturer automation note](https://www.teledynevisionsolutions.com/learn/learning-center/scientific-imaging/instrument-automation-via-national-instruments-labview/). Power-driver version information: [Thorlabs OPM manual](https://media.thorlabs.com/contentassets/012d23129bc54ff2bfdbf4c6d4a306fa/tl_opm_v7.0.pdf). / SDKの所在とドライバーの版の違いは、これらのメーカー資料も参照してください。
@@ -58,7 +59,7 @@ Manufacturer DLLs and the original Thorlabs helper are not redistributed here. K
 
 ## Setup / 設定
 
-From the extracted package root / 展開したフォルダーのルートで実行:
+Run this from the installed application directory or the extracted portable folder with the Python used for acquisition. / 実機取得に使うPythonで、インストール先またはportable版の展開先から実行します。
 
 ```powershell
 python -m pip install -r bridge/requirements.txt

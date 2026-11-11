@@ -1,3 +1,21 @@
+# Preview配布検証
+
+各版のReleaseにある `VALIDATION.json` は、Rust・Pythonのテスト、Windowsで展開したexeの版・設定とimport、隔離環境でのSetupの導入・更新・削除、macOS配布物の検査を記録しています。表の全版で `physical_hardware_tested` と `native_gui_window_tested` は `false` です。別途記録されたDemoは配布CIの項目と区別します。測定PCでのWindows GUI起動、メーカーSDK接続、実機の測定・校正・停止は[実機確認チェックリスト](../guides/hardware-qualification.md)で確認します。
+
+| Preview | 変更の要約 | 配布CIの記録 |
+| --- | --- | --- |
+| [v0.3.11](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.11) | 解析CSV・raw CSV・log・条件JSONの4ファイル保存セットとSHA-256。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.11/VALIDATION.json) |
+| [v0.3.10](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.10) | GUI依存の更新、描画と制御処理の分離、共通SDKの制御権競合修正。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.10/VALIDATION.json) |
+| [v0.3.9](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.9) | ネイティブ電力値・単位の保存、BG照合の拡張、Shutterの操作履歴。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.9/VALIDATION.json) |
+| [v0.3.8](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.8) | 空のホーム環境変数のフォールバック、共通API応答の読み取り改善。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.8/VALIDATION.json) |
+| [v0.3.7](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.7) | 設定・実行時ファイル・結果・ログをアプリ固有ディレクトリへ統一。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.7/VALIDATION.json) |
+| [v0.3.6](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.6) | 初回通常起動時に標準設定を自動作成し、既存ファイルを保持。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.6/VALIDATION.json) |
+| [v0.3.5](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.5) | 共通Control Protocol 1とPython SDK、受付と完了・復帰結果の区別。 | [VALIDATION.json](https://github.com/woolen-yarn/kohdalab-ple/releases/download/v0.3.5/VALIDATION.json) |
+
+以下は当時の記述を保存した履歴です。[release-readiness.json](release-readiness.json) は **0.2.1時点の履歴** です。配布版ごとの結果は上表から確認できます。
+
+---
+
 # v0.3.0 外部API・自動BG — 2026-10-29
 
 [kohdalab-shutter連携](../reference/shutter.md)と通常起動GUI APIを追加。模擬APIでは、排他操作、状態待ち、通信応答喪失、global busy、lease喪失、Close/Release復旧を検証します。ネイティブDemoでは手動BGと自動BG、初回PLの保持、解析確定と保存、heartbeat失効停止を確認します。macOSネイティブGUIでの[実行記録](gui-api-bg-0.3.0.json)は手動BG・自動BGの完了run 2件の保存検証も含みます。Releaseの`VALIDATION.json`は配布CIの結果として区別します。物理Pico・実光路・メーカーSDKの試験は現地の[実機確認](../guides/hardware-qualification.md)へ進みます。
