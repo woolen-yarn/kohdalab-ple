@@ -2,6 +2,15 @@
 
 ## Unreleased / 未リリース
 
+## 0.3.13 — Preview
+
+- Require a shared token for the CONEX reference adapter to listen outside IPv4 loopback. Advertise the existing lease-free Stop behavior for authenticated PLE GUI API clients and document Windows descriptor permissions. / CONEX参照アダプターがIPv4ループバック外で待ち受ける場合は共有トークンを必須にします。認証済みPLE GUI APIクライアントがleaseなしでStopできる既存動作を能力宣言に反映し、Windowsの接続情報ファイルのアクセス権を明記します。
+- Validate LightField settings immediately after BG and name unreadable settings before proceeding to signal acquisition. Fix the Windows Open Results folder selection. / BG直後にLightField設定を検査し、読めない項目があれば名前を表示して信号測定前に停止します。WindowsのOpen Resultsで選択したフォルダーを開けるようにしました。
+- Replace run JSON files atomically. At finalization, compare the points table with sample metadata and record an incomplete result with a reason if they differ. Open Results ignores legacy backup JSON. / runのJSONを一度の操作で置換します。終了時に取得一覧とサンプルメタデータを照合し、不整合時は理由付きで未完了として記録します。Open Resultsは旧runの退避JSONを読み飛ばします。
+- Pin the Rust toolchain and add a minimum supported Rust build and Dependabot checks. / Rustの版を固定し、最低対応版でのビルド検査とDependabotを追加しました。
+
+[PR #16](https://github.com/woolen-yarn/kohdalab-ple/pull/16) · [PR #17](https://github.com/woolen-yarn/kohdalab-ple/pull/17)
+
 ## 0.3.12 — 2026-11-11
 
 - Keep separate recovery latches for spectrometer Stop, shutter cleanup, stage Stop and a run interrupted with unconfirmed device state. A LightField idle confirmation no longer clears an unconfirmed shutter close; a shutter latch is cleared by a spectrometer disconnect that confirms closure. / 分光器Stop・シャッター・ステージStop・未確認のまま中断した測定の復帰ラッチを個別に保持します。LightFieldのidle確認ではシャッター閉の未確認を解除せず、シャッターのラッチは分光器切断時の閉確認で解除します。

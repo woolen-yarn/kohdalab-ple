@@ -1,4 +1,4 @@
-# KohdaLab PLE v0.3.12 — Windows実機検証の入口
+# KohdaLab PLE v0.3.13 — Windows実機検証の入口
 
 [ダウンロード表](README.md#downloads--ダウンロード)からWindows x64のSetup.exeとSHA-256を取得し、照合してから管理者権限でインストールします。スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPの場合は全体を展開して `kohdalab-ple.exe` を起動します。配布版の起動にRustは不要で、DemoにはPythonも機器も不要です。
 
