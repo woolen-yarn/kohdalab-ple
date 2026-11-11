@@ -291,6 +291,13 @@ class BridgeTests(unittest.TestCase):
         spectrometer.experiment.SetValue = set_with_reset
         applied = spectrometer._apply({"exposure_ms": 5, "frames_combined": 2, "center_nm": 710, "grating": "selected grating"})
         self.assertEqual(applied["center_nm"], 710.)
+        with self.assertRaisesRegex(bridge.BridgeError, "Could not read LightField settings: .*selected_regions"):
+            spectrometer._assert_expected_settings()
+        # Isolate the basic-setting comparison from this fake SDK's missing members.
+        qualified = {name: {"status": "unsupported"} for name in spectrometer.REQUIRED_BACKGROUND_SETTINGS}
+        read_settings = spectrometer._read_settings
+        spectrometer.settings["background_settings"] = qualified
+        spectrometer._read_settings = lambda: dict(read_settings(), background_settings=qualified)
         spectrometer.experiment.values["online_bg"]=True
         with self.assertRaisesRegex(bridge.BridgeError,"settings changed"):spectrometer._assert_expected_settings()
         spectrometer.experiment.values["online_bg"]=False

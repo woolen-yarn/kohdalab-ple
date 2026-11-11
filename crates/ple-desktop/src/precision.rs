@@ -107,65 +107,6 @@ impl<'a> Form<'a> {
                 );
             });
     }
-    #[allow(dead_code)] // Kept with the upstream fixed-form widget set.
-    pub fn editable_combo(
-        &mut self,
-        name: &str,
-        local: Rect,
-        value: &mut String,
-        options: &[String],
-    ) {
-        let r = self.at(name, local);
-        self.ui
-            .scope_builder(egui::UiBuilder::new().max_rect(r), |ui| {
-                if !self.enabled {
-                    ui.disable();
-                }
-                let arrow_width = 18.;
-                let text_rect =
-                    Rect::from_min_max(r.min, Pos2::new(r.max.x - arrow_width, r.max.y));
-                ui.put(
-                    text_rect,
-                    egui::TextEdit::singleline(value)
-                        .id(egui::Id::new((name, "text")))
-                        .margin(Vec2::new(4., 2.))
-                        .min_size(text_rect.size())
-                        .vertical_align(egui::Align::Center)
-                        .desired_width(text_rect.width()),
-                );
-                let arrow_rect = Rect::from_min_max(Pos2::new(text_rect.max.x, r.min.y), r.max);
-                let arrow = ui.put(
-                    arrow_rect,
-                    egui::Button::new("")
-                        .min_size(arrow_rect.size())
-                        .corner_radius(6),
-                );
-                paint_arrow(ui, arrow_rect, false);
-                egui::Popup::menu(&arrow).show(|ui| {
-                    if options.is_empty() {
-                        ui.label("No ports found");
-                    }
-                    for option in options {
-                        if ui.selectable_label(*value == *option, option).clicked() {
-                            *value = option.clone();
-                            ui.close();
-                        }
-                    }
-                });
-            });
-    }
-    #[allow(dead_code)] // Shared upstream checkbox kept for PLE device extensions.
-    pub fn check(&mut self, name: &str, local: Rect, value: &mut bool, label: &str) {
-        let r = self.at(name, local);
-        self.ui
-            .scope_builder(egui::UiBuilder::new().max_rect(r), |ui| {
-                if !self.enabled {
-                    ui.disable();
-                }
-                ui.put(r, egui::Checkbox::new(value, label));
-            });
-    }
-
     pub fn number(
         &mut self,
         name: &str,

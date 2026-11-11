@@ -364,8 +364,18 @@ class LightFieldSpectrometer:
 
     def _assert_expected_settings(self) -> None:
         actual = self._read_settings()
-        if not self._same_runtime_settings(self.settings, actual):
-            raise BridgeError(f"LightField settings changed after configuration; expected {self.settings}, read {actual}")
+        if self._same_runtime_settings(self.settings, actual):
+            return
+        for snapshot in (actual, self.settings):
+            fields = snapshot.get("background_settings")
+            if not isinstance(fields, dict):
+                raise BridgeError("Could not read LightField setting background_settings")
+            unreadable = self.REQUIRED_BACKGROUND_SETTINGS - fields.keys()
+            unreadable.update(name for name, field in fields.items()
+                              if not isinstance(field, dict) or field.get("status") not in {"supported", "unsupported"})
+            if unreadable:
+                raise BridgeError(f"Could not read LightField settings: {', '.join(sorted(unreadable))}")
+        raise BridgeError(f"LightField settings changed after configuration; expected {self.settings}, read {actual}")
 
     def _exclusively_readable(self, paths: list[Path]) -> bool:
         """A paused writer still holds the file on Windows; do not parse it."""
