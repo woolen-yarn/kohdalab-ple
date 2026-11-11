@@ -28,24 +28,28 @@ fn sha256(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hash.finalize()))
 }
 pub fn atomic_json(path: &Path, value: &impl serde::Serialize) -> Result<(), String> {
-    let temp = path.with_extension("json.tmp");
-    let file = File::create(&temp).map_err(|e| e.to_string())?;
-    let mut w = BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut w, value).map_err(|e| e.to_string())?;
-    w.write_all(b"\n").map_err(|e| e.to_string())?;
-    w.flush().map_err(|e| e.to_string())?;
-    w.get_ref().sync_all().map_err(|e| e.to_string())?;
-    // Windows rename cannot replace an existing destination. ReplaceFileW is not
-    // required here: original status remains recoverable as status.previous.json.
-    if path.exists() {
-        let previous = path.with_extension("previous.json");
-        if previous.exists() {
-            fs::remove_file(&previous).map_err(|e| e.to_string())?;
-        }
-        fs::rename(path, &previous).map_err(|e| e.to_string())?;
+    let parent = path.parent().filter(|dir| !dir.as_os_str().is_empty());
+    let mut temp = tempfile::Builder::new()
+        .prefix(".ple-")
+        .make_in(parent.unwrap_or_else(|| Path::new(".")), |temp_path| {
+            OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(temp_path)
+        })
+        .map_err(|e| e.to_string())?;
+    {
+        let mut writer = BufWriter::new(temp.as_file_mut());
+        serde_json::to_writer_pretty(&mut writer, value).map_err(|e| e.to_string())?;
+        writer.write_all(b"\n").map_err(|e| e.to_string())?;
+        writer.flush().map_err(|e| e.to_string())?;
     }
-    fs::rename(temp, path).map_err(|e| e.to_string())
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    // std's rename also supports replacing a file held open by a reader
+    // on Windows filesystems with FileRenameInfoEx support.
+    fs::rename(temp.into_temp_path(), path).map_err(|e| e.to_string())
 }
+
 pub struct Recording {
     pub directory: PathBuf,
     events: File,
@@ -451,7 +455,73 @@ impl Recording {
             &json!({"schema_version":1,"run_id":self.run_id,"state":state,"completed_acquisitions":self.completed,"preview_acquired":self.preview_acquired,"analysis_confirmed":self.analysis_confirmed,"planned_acquisitions":self.planned,"updated_unix_s":unix_s(),"error":error}),
         )
     }
+    fn verify_sample_inventory(&self) -> Result<(), String> {
+        let mut points = csv::Reader::from_path(self.directory.join("points.csv"))
+            .map_err(|e| format!("Could not read points.csv: {e}"))?;
+        let headers = points
+            .headers()
+            .map_err(|e| format!("Invalid points.csv: {e}"))?;
+        let base_column = headers
+            .iter()
+            .position(|field| field == "spectrum_base")
+            .ok_or("points.csv is missing spectrum_base")?;
+        let mut expected = std::collections::HashSet::new();
+        for row in points.records() {
+            let row = row.map_err(|e| format!("Invalid points.csv record: {e}"))?;
+            let base = &row[base_column];
+            if !expected.insert(format!("{base}.json")) {
+                return Err(format!("Duplicate spectrum_base in points.csv: {base}"));
+            }
+        }
+        let mut actual = std::collections::HashSet::new();
+        for entry in fs::read_dir(self.directory.join("metadata"))
+            .map_err(|e| format!("Could not read metadata/: {e}"))?
+        {
+            let entry = entry.map_err(|e| format!("Could not read metadata entry: {e}"))?;
+            if let Some(name) = entry.file_name().to_str()
+                && (is_sample_metadata(name) || expected.contains(name))
+                && entry
+                    .file_type()
+                    .map_err(|e| format!("Could not inspect metadata/{name}: {e}"))?
+                    .is_file()
+            {
+                actual.insert(name.to_owned());
+            }
+        }
+        if expected.len() != actual.len() || expected.len() != self.completed {
+            return Err(format!(
+                "Sample count mismatch: points.csv has {} rows, metadata/ has {} samples, and {} acquisitions were saved",
+                expected.len(),
+                actual.len(),
+                self.completed
+            ));
+        }
+        if let Some(name) = expected.difference(&actual).min() {
+            return Err(format!(
+                "points.csv references missing sample metadata/{name}"
+            ));
+        }
+        Ok(())
+    }
+
     pub fn finish(&mut self, state: &str, error: Option<&str>) -> Result<(), String> {
+        let incomplete = self
+            .verify_sample_inventory()
+            .err()
+            .map(|reason| format!("Incomplete recording: {reason}"));
+        let combined_error = incomplete
+            .as_deref()
+            .zip(error)
+            .map(|(reason, original)| format!("{original}; {reason}"));
+        let error = combined_error
+            .as_deref()
+            .or(incomplete.as_deref())
+            .or(error);
+        let state = if incomplete.is_some() && state != "interrupted_unconfirmed" {
+            "failed"
+        } else {
+            state
+        };
         self.event("run_finished", json!({"state":state,"error":error}))?;
         self.events.sync_all().map_err(|e| e.to_string())?;
         self.raw.flush().map_err(|e| e.to_string())?;
@@ -496,6 +566,11 @@ impl Recording {
                     .map_err(|e| e.to_string())?,
             )
             .map_err(|e| e.to_string())?;
+        }
+        if let Some(reason) = incomplete {
+            manifest["hash_verification"] = json!({"status":"incomplete","algorithm":"sha256"});
+            atomic_json(&self.directory.join("analysis.run.json"), &manifest)?;
+            return Err(reason);
         }
         manifest["file_hashes"] = json!({"csv_sha256":sha256(&self.directory.join("analysis.csv"))?,
             "raw_csv_sha256":sha256(&self.directory.join("analysis.raw.csv"))?,
@@ -544,6 +619,12 @@ fn write_raw_csv(path: &Path, s: &Spectrum) -> Result<(), String> {
     drop(w);
     fs::rename(temp, path).map_err(|e| e.to_string())
 }
+fn is_sample_metadata(name: &str) -> bool {
+    (name.starts_with("point_") || name.starts_with("Y_"))
+        && name.ends_with(".json")
+        && !name.ends_with(".previous.json")
+}
+
 pub fn load_run(path: &Path) -> Result<(Config, Vec<Sample>), String> {
     let value: Value = serde_json::from_reader(
         File::open(path.join(if path.join("accepted_settings.json").is_file() {
@@ -564,9 +645,9 @@ pub fn load_run(path: &Path) -> Result<(Config, Vec<Sample>), String> {
         .filter_map(Result::ok)
         .map(|e| e.path())
         .filter(|p| {
-            p.file_name().and_then(|s| s.to_str()).is_some_and(|s| {
-                (s.starts_with("point_") || s.starts_with("Y_")) && s.ends_with(".json")
-            })
+            p.file_name()
+                .and_then(|s| s.to_str())
+                .is_some_and(is_sample_metadata)
         })
         .collect();
     files.sort();
@@ -634,27 +715,13 @@ mod tests {
         assert!(write_raw_csv(&path, &s).is_err());
         assert_eq!(fs::read(&path).unwrap(), saved);
     }
-    #[test]
-    fn raw_data_and_status_survive_stop() {
-        let dir = tempfile::tempdir().unwrap();
-        let c = Config {
-            output_dir: dir.path().to_string_lossy().into(),
-            ..Default::default()
-        };
-        let p = c.plan().unwrap();
-        let mut r = Recording::create(&c, &p).unwrap();
-        let pending: Value =
-            serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
-                .unwrap();
-        assert_eq!(pending["in_progress"], true);
-        assert_eq!(pending["hash_verification"]["status"], "pending");
+    fn sample_fixture() -> (Sample, Spectrum) {
         let b = Spectrum {
             wavelength_nm: vec![750., 800.],
             counts: vec![4., 5.],
             spe_path: None,
             settings: Value::Null,
         };
-        r.background(&b).unwrap();
         let s = Sample {
             file_base: String::new(),
             point_index: 0,
@@ -678,6 +745,35 @@ mod tests {
             },
             corrected_counts: vec![-1., 5.],
         };
+        (s, b)
+    }
+
+    fn create_recording() -> (tempfile::TempDir, Recording) {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            output_dir: dir.path().to_string_lossy().into(),
+            ..Default::default()
+        };
+        let recording = Recording::create(&config, &config.plan().unwrap()).unwrap();
+        (dir, recording)
+    }
+
+    #[test]
+    fn raw_data_and_status_survive_stop() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = Config {
+            output_dir: dir.path().to_string_lossy().into(),
+            ..Default::default()
+        };
+        let p = c.plan().unwrap();
+        let mut r = Recording::create(&c, &p).unwrap();
+        let pending: Value =
+            serde_json::from_reader(File::open(r.directory.join("analysis.run.json")).unwrap())
+                .unwrap();
+        assert_eq!(pending["in_progress"], true);
+        assert_eq!(pending["hash_verification"]["status"], "pending");
+        let (s, b) = sample_fixture();
+        r.background(&b).unwrap();
         r.sample(&s, &b).unwrap();
         r.finish("stopped", None).unwrap();
         let v: Value =
@@ -737,6 +833,147 @@ mod tests {
         assert!(raw.contains("750,3"));
         assert!(!r.directory.join("raw/background.spe").exists());
     }
+    #[test]
+    fn json_replacement_keeps_a_complete_document_available_to_readers() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("status.json");
+        let snapshot = |generation: u32| {
+            json!({
+                "generation": generation,
+                "payload": generation.to_string().repeat(2048),
+            })
+        };
+        atomic_json(&path, &snapshot(0)).unwrap();
+        let first = File::open(&path).unwrap();
+        std::thread::scope(|scope| {
+            let writer = scope.spawn(|| {
+                for generation in 1..=32 {
+                    atomic_json(&path, &snapshot(generation)).unwrap();
+                }
+            });
+            loop {
+                let observed: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                let generation = observed["generation"].as_u64().unwrap() as u32;
+                assert_eq!(observed, snapshot(generation));
+                if writer.is_finished() {
+                    break;
+                }
+            }
+            writer.join().unwrap();
+        });
+        let original: Value = serde_json::from_reader(first).unwrap();
+        assert_eq!(original, snapshot(0));
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+        let last: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(last, snapshot(32));
+    }
+
+    #[test]
+    fn failed_sample_keeps_raw_data_and_marks_bundle_incomplete() {
+        let (_dir, mut recording) = create_recording();
+        let (sample, bg) = sample_fixture();
+        // A read-only analysis writer fails after the raw, processed and metadata
+        // files have been stored but before the point summary is appended.
+        let read_only = File::open(recording.directory.join("analysis.csv")).unwrap();
+        recording.analysis = csv::Writer::from_writer(read_only);
+        let sample_error = recording.sample(&sample, &bg).unwrap_err();
+        assert_eq!(recording.completed, 0);
+        let base = "point_00000_repeat_000";
+        assert!(
+            recording
+                .directory
+                .join(format!("raw/{base}.csv"))
+                .is_file()
+        );
+        assert!(
+            recording
+                .directory
+                .join(format!("processed/{base}.csv"))
+                .is_file()
+        );
+        assert!(
+            recording
+                .directory
+                .join(format!("metadata/{base}.json"))
+                .is_file()
+        );
+
+        let reason = recording.finish("failed", Some(&sample_error)).unwrap_err();
+        assert!(
+            reason.contains("points.csv has 0 rows, metadata/ has 1 samples"),
+            "{reason}"
+        );
+        let manifest: Value = serde_json::from_reader(
+            File::open(recording.directory.join("analysis.run.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["in_progress"], false);
+        assert_eq!(manifest["final_status"], "failed");
+        assert_eq!(manifest["hash_verification"]["status"], "incomplete");
+        assert!(manifest["file_hashes"].is_null());
+        let error = manifest["error"].as_str().unwrap();
+        assert!(error.contains(&sample_error) && error.contains(&reason));
+    }
+
+    #[test]
+    fn finish_rejects_a_different_sample_with_the_same_count() {
+        let (_dir, mut recording) = create_recording();
+        let (sample, bg) = sample_fixture();
+        recording.sample(&sample, &bg).unwrap();
+        let metadata = recording.directory.join("metadata");
+        fs::rename(
+            metadata.join("point_00000_repeat_000.json"),
+            metadata.join("point_00001_repeat_000.json"),
+        )
+        .unwrap();
+        let reason = recording.finish("completed", None).unwrap_err();
+        assert!(reason.contains("missing sample metadata/point_00000_repeat_000.json"));
+        let status: Value =
+            serde_json::from_reader(File::open(recording.directory.join("status.json")).unwrap())
+                .unwrap();
+        assert_eq!(status["state"], "failed");
+        assert_eq!(status["error"], reason);
+    }
+
+    #[test]
+    fn finish_io_failure_does_not_publish_verified_hashes() {
+        let (_dir, mut recording) = create_recording();
+        let analysis_path = recording.directory.join("analysis.csv");
+        let replacement = tempfile::tempfile().unwrap();
+        recording.analysis = csv::Writer::from_writer(replacement);
+        fs::remove_file(analysis_path).unwrap();
+
+        assert!(recording.finish("completed", None).is_err());
+        let manifest: Value = serde_json::from_reader(
+            File::open(recording.directory.join("analysis.run.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(manifest["hash_verification"]["status"], "pending");
+        assert!(manifest["file_hashes"].is_null());
+    }
+
+    #[test]
+    fn load_run_preserves_remaining_samples_and_ignores_legacy_backups() {
+        let (_dir, mut recording) = create_recording();
+        let (mut sample, bg) = sample_fixture();
+        recording.sample(&sample, &bg).unwrap();
+        sample.point_index = 1;
+        recording.sample(&sample, &bg).unwrap();
+        let metadata = recording.directory.join("metadata");
+        fs::remove_file(metadata.join("point_00001_repeat_000.json")).unwrap();
+        fs::write(
+            metadata.join("point_00000_repeat_000.previous.json"),
+            "invalid backup JSON",
+        )
+        .unwrap();
+
+        let (_, samples) = load_run(&recording.directory).unwrap();
+        assert_eq!(samples.len(), 1);
+        assert_eq!(samples[0].point_index, 0);
+        fs::rename(&metadata, recording.directory.join("metadata-unavailable")).unwrap();
+        assert!(load_run(&recording.directory).is_err());
+    }
+
     #[test]
     fn failed_bundle_records_error_and_hashes() {
         let dir = tempfile::tempdir().unwrap();

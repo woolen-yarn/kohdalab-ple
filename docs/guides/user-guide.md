@@ -101,7 +101,6 @@ sample_<run-id>/
   accepted_settings.json      # 最初のPLで確定した解析条件を含む設定
   analysis.json               # ピーク追跡・積分区間、確定時刻
   status.json                 # 完了／中断／失敗と保存済み取得数
-  status.previous.json        # 直前の状態（更新時に保持）
   events.jsonl                # 移動・取得・保存・終了の履歴
   points.csv                  # 位置・励起波長・パワー・PL指標
   analysis.csv                # 波長ビン単位の解析・表示用CSV

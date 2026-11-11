@@ -125,7 +125,10 @@ def verify_bundle(run: Path, points: list[dict[str, str]], errors: list[str]) ->
         if manifest.get("in_progress"):
             raise ValueError("analysis.run.json: completed verifier cannot accept an in-progress bundle")
         hashes = manifest.get("file_hashes")
-        if not isinstance(hashes, dict) or manifest.get("hash_verification", {}).get("status") != "verified":
+        verification = manifest.get("hash_verification", {}).get("status")
+        if verification == "incomplete":
+            raise ValueError(f"analysis.run.json: {manifest.get('error') or 'recording is incomplete'}")
+        if not isinstance(hashes, dict) or verification != "verified":
             raise ValueError("analysis.run.json: finalized SHA-256 hashes are missing")
         for key, name in (("csv_sha256", "analysis.csv"), ("raw_csv_sha256", "analysis.raw.csv"), ("log_sha256", "analysis.log")):
             actual = hashlib.sha256((run / name).read_bytes()).hexdigest()

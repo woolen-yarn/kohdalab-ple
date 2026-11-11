@@ -35,7 +35,7 @@ Raw SPEとLightFieldのエクスポートは取得時のまま保持する。共
 
 LightField設定スナップショットは、BGと厳密照合する露光、合成フレーム、中心波長、グレーティング、online BG補正に加え、順序を保持したROI（X/Y binningを含む）、ADC gain/speed/quality/bit depth、readout control mode、文書化済みonline correctionを`background_settings`として保存する。実験が明示的にunsupportedと返す設定はその状態を保存するが、SDKメンバー不明または読出し不能は一致とは扱わずBG照合を失敗させる。温度setpointは安定したBG照合条件として保存し、変動する読出し値/statusは別の観測としてBG同一性の条件にしない。生SPEと生配列は、照合失敗時も拒否前に保存する。
 
-status.jsonは一時ファイルを同期後、直前版をstatus.previous.jsonへ移して更新する。両rename間に異常終了した場合はprevious側から直前状態を確認できる。OSやストレージ故障に対する完全なトランザクションではない。events.jsonl、points.csv、metadataを照合できるように残す。
+JSONは同じフォルダーに一時ファイルを書いて同期し、1回の置換で更新する。旧runの `*.previous.json` は結果を開く際のサンプル一覧から除外する。終了時に `points.csv` とサンプルメタデータの件数・対応を照合し、不一致の場合は `analysis.run.json` の `hash_verification.status` を `incomplete` として理由を `error` に記録する。
 
 再読込は表示用で、途中からの自動再開は未実装。中断ファイルを上書きせず、新規runを作る。
 
