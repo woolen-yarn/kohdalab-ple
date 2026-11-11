@@ -55,7 +55,11 @@ struct PleApp {
     controller: Controller,
     api: Option<api_ui::Runtime>,
     api_cleanup: bool,
-    api_cleanup_error: Option<String>,
+    cleanup_errors: [Option<String>; 3],
+    run_unconfirmed: Option<String>,
+    recovery_stop_requested: bool,
+    recovery_reconnect_pending: [bool; 3],
+    recovery_disconnect_confirmed: [bool; 3],
     plot_cache: Option<presentation::PlotDataCache>,
     config: Config,
     connected: [bool; 3],
@@ -149,7 +153,11 @@ impl PleApp {
             controller,
             api: launch.api_server.map(api_ui::Runtime::new),
             api_cleanup: false,
-            api_cleanup_error: None,
+            cleanup_errors: Default::default(),
+            run_unconfirmed: None,
+            recovery_stop_requested: false,
+            recovery_reconnect_pending: [false; 3],
+            recovery_disconnect_confirmed: [false; 3],
             plot_cache: None,
             config,
             connected: [false; 3],
@@ -232,13 +240,25 @@ impl PleApp {
     fn start(&mut self) {
         self.start_for(None);
     }
+    fn cleanup_error(&self) -> Option<String> {
+        self.cleanup_errors
+            .iter()
+            .flatten()
+            .next()
+            .cloned()
+            .or_else(|| self.run_unconfirmed.clone())
+    }
     fn recovery_reason(&self) -> Option<String> {
         let (pending, error) = self.controller.stop_status();
         if pending {
             Some("Waiting for Stop and device readback".into())
         } else {
-            error.or_else(|| self.api_cleanup_error.clone())
+            error.or_else(|| self.cleanup_error())
         }
+    }
+    fn retry_stop(&mut self) {
+        self.recovery_stop_requested = self.run_unconfirmed.is_some();
+        self.controller.stop();
     }
     fn start_for(&mut self, external_id: Option<String>) {
         if let Some(reason) = self.recovery_reason() {
@@ -323,6 +343,20 @@ impl PleApp {
                         }
                     }
                 }
+                Event::DeviceConfirmed { device, connected } => {
+                    let i = match device {
+                        "spectrometer" => 0,
+                        "stage" => 1,
+                        _ => 2,
+                    };
+                    if self.run_unconfirmed.is_some() {
+                        if !connected {
+                            self.recovery_disconnect_confirmed[i] = true;
+                        } else if self.recovery_disconnect_confirmed[i] {
+                            self.recovery_reconnect_pending[i] = false;
+                        }
+                    }
+                }
                 Event::Telemetry {
                     device,
                     value,
@@ -360,8 +394,8 @@ impl PleApp {
                         }
                         Err(e) => {
                             self.state = "Manual move stopped / failed".into();
-                            self.log(&e);
-                            self.message = Some(e);
+                            self.log(e.to_string());
+                            self.message = Some(e.to_string());
                         }
                     }
                 }
@@ -421,23 +455,20 @@ impl PleApp {
                         Ok(v) => {
                             self.spectrometer_settings = v;
                             self.message = None;
-                            self.api_cleanup_error = None;
+                            self.cleanup_errors[engine::CleanupCause::SpectrometerStop as usize] =
+                                None;
                             self.log("LightField settings applied and read back");
                         }
                         Err(e) => {
                             self.log(&e);
-                            self.api_cleanup_error =
+                            self.cleanup_errors[engine::CleanupCause::SpectrometerStop as usize] =
                                 Some(format!("Spectrometer configuration was not confirmed: {e}"));
                             self.message = Some(e);
                         }
                     }
                 }
-                Event::Cleanup { confirmed, error } => {
-                    self.api_cleanup_error = if confirmed {
-                        None
-                    } else {
-                        error.or_else(|| Some("Device cleanup unconfirmed".into()))
-                    };
+                Event::Cleanup { cause, result } => {
+                    self.cleanup_errors[cause as usize] = result.err();
                 }
                 Event::Background(bg) => {
                     self.log(format!("BG saved: {} bins", bg.counts.len()));
@@ -457,19 +488,19 @@ impl PleApp {
                     self.run_dir = path;
                 }
                 Event::Finished { state, error } => {
-                    if state.contains("unconfirmed")
-                        || error.as_ref().is_some_and(|e| {
-                            e.contains("shutter closed state could not be confirmed")
-                        })
-                    {
-                        self.api_cleanup_error =
-                            Some(error.clone().unwrap_or_else(|| state.clone()));
+                    if matches!(state, engine::RunState::InterruptedUnconfirmed) {
+                        self.run_unconfirmed = Some(state.label().into());
+                        self.recovery_stop_requested = false;
+                        // The run outcome does not identify a device. Require all
+                        // three confirmed reconnects, or an explicit recovery Stop.
+                        self.recovery_reconnect_pending = [true; 3];
+                        self.recovery_disconnect_confirmed = [false; 3];
                     }
                     self.busy = false;
                     self.finished_elapsed = self.started.map(|t| t.elapsed().as_secs_f64());
                     self.awaiting = 0;
-                    self.state = state.clone();
-                    self.log(state);
+                    self.state = state.label().into();
+                    self.log(state.label());
                     if let Some(e) = error {
                         self.log(&e);
                         self.message = Some(e);
@@ -477,6 +508,21 @@ impl PleApp {
                 }
             }
             self.api_observe(note);
+        }
+        if self.run_unconfirmed.is_some()
+            && (self.recovery_stop_requested
+                || !self
+                    .recovery_reconnect_pending
+                    .iter()
+                    .any(|pending| *pending))
+            && !self.busy
+            && !self.manual_moving
+            && !self.spectrometer_configuring
+            && self.cleanup_errors.iter().all(Option::is_none)
+            && self.controller.stop_status() == (false, None)
+        {
+            self.run_unconfirmed = None;
+            self.recovery_stop_requested = false;
         }
     }
 }

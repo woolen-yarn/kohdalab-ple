@@ -15,10 +15,78 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+#[derive(Clone, Copy, Debug)]
+pub enum CleanupCause {
+    SpectrometerStop,
+    Shutter,
+    Stage,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum RunState {
+    Completed,
+    Stopped,
+    InterruptedUnconfirmed,
+    Failed,
+}
+
+impl RunState {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Completed => "Completed",
+            Self::Stopped => "Stopped",
+            Self::InterruptedUnconfirmed => "Interrupted — device state unconfirmed",
+            Self::Failed => "Failed",
+        }
+    }
+
+    fn recorded_status(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Stopped => "stopped",
+            Self::InterruptedUnconfirmed => "interrupted_unconfirmed",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum RunError {
+    Stopped(&'static str),
+    Failed(String),
+}
+
+impl From<String> for RunError {
+    fn from(error: String) -> Self {
+        Self::Failed(error)
+    }
+}
+
+impl From<&str> for RunError {
+    fn from(error: &str) -> Self {
+        Self::Failed(error.into())
+    }
+}
+
+impl std::fmt::Display for RunError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stopped(message) => f.write_str(message),
+            Self::Failed(message) => f.write_str(message),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Event {
     Log(String),
     Device {
+        device: &'static str,
+        connected: bool,
+    },
+    // Unlike Device (which also reports retained ownership on failure), this
+    // event confirms that the requested connect/disconnect operation succeeded.
+    DeviceConfirmed {
         device: &'static str,
         connected: bool,
     },
@@ -28,7 +96,7 @@ pub enum Event {
         timestamp: f64,
     },
     State(String),
-    ManualMoveFinished(Result<f64, String>),
+    ManualMoveFinished(Result<f64, RunError>),
     AwaitBackground,
     AwaitSignal,
     Preview(Arc<Acquisition>),
@@ -40,14 +108,14 @@ pub enum Event {
     ShutterState(serde_json::Value),
     SpectrometerConfigured(Result<serde_json::Value, String>),
     Cleanup {
-        confirmed: bool,
-        error: Option<String>,
+        cause: CleanupCause,
+        result: Result<(), String>,
     },
     Background(Spectrum),
     Sample(Arc<Sample>),
     RunCreated(String),
     Finished {
-        state: String,
+        state: RunState,
         error: Option<String>,
     },
 }
@@ -112,28 +180,38 @@ impl Controller {
                         }
                         let result = match device {
                             "spectrometer" => {
-                                (|| {
+                                let result = (|| {
                                     let previous_shutter = shutter_handle.lock().unwrap().clone();
                                     if spec.is_none()
                                         && let Some(shutter) = previous_shutter
                                     {
-                                        shutter.shutdown()?;
+                                        shutter
+                                            .shutdown()
+                                            .map_err(|e| (CleanupCause::Shutter, e))?;
                                         *shutter_handle.lock().unwrap() = None;
+                                        let _ = events_tx.send(Event::Cleanup {
+                                            cause: CleanupCause::Shutter,
+                                            result: Ok(()),
+                                        });
                                     }
                                     let previous = spec_handle.lock().unwrap().clone();
                                     if let Some(previous) = &previous {
-                                        previous.wait_for_stop(true)?;
+                                        previous
+                                            .wait_for_stop(true)
+                                            .map_err(|e| (CleanupCause::SpectrometerStop, e))?;
                                     }
                                     if let Some(current) = spec.as_mut() {
-                                        current.disconnect()?;
+                                        current.disconnect(&events_tx)?;
                                     } else if let Some(previous) = previous {
-                                        let result = previous.request(
-                                            "shutdown",
-                                            json!({}),
-                                            Duration::from_secs(25),
-                                        )?;
+                                        let result = previous
+                                            .request("shutdown", json!({}), Duration::from_secs(25))
+                                            .map_err(|e| (CleanupCause::SpectrometerStop, e))?;
                                         if result["shutdown"].as_bool() != Some(true) {
-                                            return Err("Previous LightField bridge shutdown was not confirmed".into());
+                                            return Err((
+                                                CleanupCause::SpectrometerStop,
+                                                "Previous LightField bridge shutdown was not confirmed"
+                                                    .into(),
+                                            ));
                                         }
                                     }
                                     spec = None;
@@ -151,7 +229,19 @@ impl Controller {
                                             .send(Event::SpectrometerSettings(s.settings()));
                                         spec = Some(s);
                                     })
-                                })()
+                                    .map_err(|e| (CleanupCause::SpectrometerStop, e))
+                                })();
+                                result.map_err(|(cause, error)| {
+                                    if matches!(cause, CleanupCause::Shutter)
+                                        || spec_handle.lock().unwrap().is_some()
+                                    {
+                                        let _ = events_tx.send(Event::Cleanup {
+                                            cause,
+                                            result: Err(error.clone()),
+                                        });
+                                    }
+                                    error
+                                })
                             }
                             "stage" => stage.connect(c.clone()),
                             "power" => power.connect(c.clone()),
@@ -159,13 +249,15 @@ impl Controller {
                         };
                         if result.is_ok() {
                             connected_mode = Some(c.mode);
+                            let _ = events_tx.send(Event::DeviceConfirmed {
+                                device,
+                                connected: true,
+                            });
                         }
-                        if device == "spectrometer"
-                            && (result.is_ok() || spec_handle.lock().unwrap().is_some())
-                        {
+                        if device == "spectrometer" && result.is_ok() {
                             let _ = events_tx.send(Event::Cleanup {
-                                confirmed: result.is_ok(),
-                                error: result.as_ref().err().cloned(),
+                                cause: CleanupCause::SpectrometerStop,
+                                result: Ok(()),
                             });
                         }
                         let _ = events_tx.send(Event::Device {
@@ -184,7 +276,7 @@ impl Controller {
                             "spectrometer" => {
                                 let orphan = spec_handle.lock().unwrap().clone();
                                 let result = if let Some(current) = spec.as_mut() {
-                                    current.disconnect()
+                                    current.disconnect(&events_tx)
                                 } else if let Some(previous) = orphan {
                                     previous
                                         .request("shutdown", json!({}), Duration::from_secs(25))
@@ -195,14 +287,15 @@ impl Controller {
                                                 Err("Bridge shutdown was not confirmed".into())
                                             }
                                         })
+                                        .map_err(|e| (CleanupCause::SpectrometerStop, e))
                                 } else {
                                     Ok(())
                                 };
-                                if let Err(e) = result {
+                                if let Err((cause, e)) = result {
                                     disconnect_failed = true;
                                     let _ = events_tx.send(Event::Cleanup {
-                                        confirmed: false,
-                                        error: Some(e.clone()),
+                                        cause,
+                                        result: Err(e.clone()),
                                     });
                                     let _ = events_tx.send(Event::Log(format!(
                                         "Spectrometer disconnect not confirmed: {e}"
@@ -211,8 +304,8 @@ impl Controller {
                                     spec = None;
                                     *spec_handle.lock().unwrap() = None;
                                     let _ = events_tx.send(Event::Cleanup {
-                                        confirmed: true,
-                                        error: None,
+                                        cause: CleanupCause::SpectrometerStop,
+                                        result: Ok(()),
                                     });
                                 }
                             }
@@ -226,6 +319,12 @@ impl Controller {
                         }
                         if spec.is_none() && !stage.is_connected() && !power.is_connected() {
                             connected_mode = None;
+                        }
+                        if !disconnect_failed {
+                            let _ = events_tx.send(Event::DeviceConfirmed {
+                                device,
+                                connected: false,
+                            });
                         }
                         let _ = events_tx.send(Event::Device {
                             device,
@@ -256,14 +355,14 @@ impl Controller {
                             && power.is_connected()
                             && connected_mode == Some(c.mode);
                         if !ready {
-                            let _=events_tx.send(Event::Finished{state:"Failed".into(),error:Some("Connect spectrometer, CONEX CC and power meter in the same mode before starting".into())});
+                            let _=events_tx.send(Event::Finished{state:RunState::Failed,error:Some("Connect spectrometer, CONEX CC and power meter in the same mode before starting".into())});
                             continue;
                         }
                         let plan = match c.plan() {
                             Ok(p) => p,
                             Err(e) => {
                                 let _ = events_tx.send(Event::Finished {
-                                    state: "Failed".into(),
+                                    state: RunState::Failed,
                                     error: Some(e),
                                 });
                                 continue;
@@ -273,7 +372,7 @@ impl Controller {
                             Ok(r) => r,
                             Err(e) => {
                                 let _ = events_tx.send(Event::Finished {
-                                    state: "Failed".into(),
+                                    state: RunState::Failed,
                                     error: Some(e),
                                 });
                                 continue;
@@ -290,7 +389,7 @@ impl Controller {
                             if let Err(e) = saved {
                                 let _ = recording.finish("failed", Some(&e));
                                 let _ = events_tx.send(Event::Finished {
-                                    state: "Failed".into(),
+                                    state: RunState::Failed,
                                     error: Some(e),
                                 });
                                 continue;
@@ -310,43 +409,32 @@ impl Controller {
                             &events_tx,
                             &mut recording,
                         );
-                        let (state, error) = match result {
-                            Ok(()) => ("Completed", None),
-                            Err(e) if stop.load(Ordering::Acquire) => {
-                                let state = if c.mode == ple_core::Mode::Hardware
-                                    && !e.starts_with("Stop requested;")
-                                {
-                                    "Interrupted — device state unconfirmed"
+                        let state = match &result {
+                            Ok(()) => RunState::Completed,
+                            Err(RunError::Stopped(_)) => RunState::Stopped,
+                            Err(_) if stop.load(Ordering::Acquire) => {
+                                if c.mode == ple_core::Mode::Hardware {
+                                    RunState::InterruptedUnconfirmed
                                 } else {
-                                    "Stopped"
-                                };
-                                (state, Some(e))
+                                    RunState::Stopped
+                                }
                             }
-                            Err(e) => ("Failed", Some(e)),
+                            Err(_) => RunState::Failed,
                         };
-                        let status_code = if state.starts_with("Interrupted") {
-                            "interrupted_unconfirmed".into()
-                        } else {
-                            state.to_lowercase()
-                        };
-                        let finish = recording.finish(&status_code, error.as_deref());
-                        let error = match finish {
-                            Ok(()) => error,
-                            Err(e) => Some(format!(
-                                "{}; final status could not be saved: {e}",
-                                error.unwrap_or_default()
-                            )),
-                        };
-                        let final_state = if error
-                            .as_ref()
-                            .is_some_and(|e| e.contains("final status could not be saved"))
-                        {
-                            "Failed"
-                        } else {
-                            state
-                        };
+                        let error = result.err().map(|e| e.to_string());
+                        let (final_state, error) =
+                            match recording.finish(state.recorded_status(), error.as_deref()) {
+                                Ok(()) => (state, error),
+                                Err(e) => (
+                                    RunState::Failed,
+                                    Some(format!(
+                                        "{}; final status could not be saved: {e}",
+                                        error.unwrap_or_default()
+                                    )),
+                                ),
+                            };
                         let _ = events_tx.send(Event::Finished {
-                            state: final_state.into(),
+                            state: final_state,
                             error,
                         });
                     }
@@ -370,7 +458,7 @@ impl Controller {
                 rpc.stop();
             }
             let cleanup = if let Some(current) = spec.as_mut() {
-                current.disconnect()
+                current.disconnect(&events_tx)
             } else if let Some(rpc) = &last_handle {
                 rpc.request("shutdown", json!({}), Duration::from_secs(25))
                     .and_then(|v| {
@@ -380,13 +468,14 @@ impl Controller {
                             Err("Bridge shutdown was not confirmed".into())
                         }
                     })
+                    .map_err(|e| (CleanupCause::SpectrometerStop, e))
             } else {
                 Ok(())
             };
-            if let Err(error) = cleanup {
+            if let Err((cause, error)) = cleanup {
                 let _ = events_tx.send(Event::Cleanup {
-                    confirmed: false,
-                    error: Some(error.clone()),
+                    cause,
+                    result: Err(error.clone()),
                 });
                 let _ = events_tx.send(Event::Log(format!(
                     "Final LightField cleanup unconfirmed: {error}"
@@ -489,14 +578,16 @@ impl Drop for Controller {
         }
     }
 }
-fn check_stop(stop: &AtomicBool) -> Result<(), String> {
+fn check_stop(stop: &AtomicBool) -> Result<(), RunError> {
     if stop.load(Ordering::Acquire) {
-        Err("Stop requested; no further scan points will start".into())
+        Err(RunError::Stopped(
+            "Stop requested; no further scan points will start",
+        ))
     } else {
         Ok(())
     }
 }
-fn wait_confirmation(rx: &mpsc::Receiver<Command>, stop: &AtomicBool) -> Result<(), String> {
+fn wait_confirmation(rx: &mpsc::Receiver<Command>, stop: &AtomicBool) -> Result<(), RunError> {
     loop {
         check_stop(stop)?;
         match rx.recv_timeout(Duration::from_millis(100)) {
@@ -511,7 +602,7 @@ fn wait_confirmation(rx: &mpsc::Receiver<Command>, stop: &AtomicBool) -> Result<
         }
     }
 }
-fn wait_settle(seconds: f64, stop: &AtomicBool) -> Result<(), String> {
+fn wait_settle(seconds: f64, stop: &AtomicBool) -> Result<(), RunError> {
     let deadline = Instant::now() + Duration::from_secs_f64(seconds);
     while Instant::now() < deadline {
         check_stop(stop)?;
@@ -532,31 +623,34 @@ fn execute(
     commands: &mpsc::Receiver<Command>,
     events: &mpsc::Sender<Event>,
     recording: &mut Recording,
-) -> Result<(), String> {
+) -> Result<(), RunError> {
     spec.configure(c)?;
     let _ = events.send(Event::SpectrometerSettings(spec.settings()));
     recording.hardware(json!({"spectrometer":spec.settings(),"power":power.hardware()?,"mode":c.mode,"source":if c.mode == ple_core::Mode::Hardware {"connected_device_readback"} else {"simulated"}}))?;
-    let result = spec.prepare_shutter(c).and_then(|()| {
-        let snapshot = spec.shutter_snapshot();
-        let _ = events.send(Event::ShutterState(snapshot.clone()));
-        ple_core::recording::atomic_json(
-            &recording.directory.join("metadata/shutter.json"),
-            &snapshot,
-        )?;
-        recording.event("shutter_connected", snapshot)?;
-        execute_inner(
-            c, plan, spec, stage, power, stop, commands, events, recording,
-        )
-    });
-    if c.background.mode == BackgroundMode::Automatic {
+    let result = spec
+        .prepare_shutter(c)
+        .map_err(RunError::from)
+        .and_then(|()| {
+            let snapshot = spec.shutter_snapshot();
+            let _ = events.send(Event::ShutterState(snapshot.clone()));
+            ple_core::recording::atomic_json(
+                &recording.directory.join("metadata/shutter.json"),
+                &snapshot,
+            )?;
+            recording.event("shutter_connected", snapshot)?;
+            execute_inner(
+                c, plan, spec, stage, power, stop, commands, events, recording,
+            )
+        });
+    if c.background.mode == BackgroundMode::Automatic && spec.shutter_attached() {
         let closed = spec.set_shutter(true);
         let closed_confirmed = closed.is_ok();
         let closed = closed.and_then(|()| spec.finish_shutter());
         let snapshot = spec.shutter_snapshot();
         let _ = events.send(Event::ShutterState(snapshot.clone()));
         let _ = events.send(Event::Cleanup {
-            confirmed: closed.is_ok(),
-            error: closed.as_ref().err().cloned(),
+            cause: CleanupCause::Shutter,
+            result: closed.clone(),
         });
         recording.event(
             "shutter_end_close",
@@ -565,8 +659,9 @@ fn execute(
         if let Err(e) = closed {
             return Err(format!(
                 "shutter cleanup could not be confirmed: {e}; prior: {}",
-                result.err().unwrap_or_default()
-            ));
+                result.err().map(|e| e.to_string()).unwrap_or_default()
+            )
+            .into());
         }
     }
     result
@@ -582,7 +677,7 @@ fn execute_inner(
     commands: &mpsc::Receiver<Command>,
     events: &mpsc::Sender<Event>,
     recording: &mut Recording,
-) -> Result<(), String> {
+) -> Result<(), RunError> {
     if c.background.mode == BackgroundMode::Manual {
         let _ = events.send(Event::State(
             "Awaiting BG: block the excitation beam".into(),
@@ -629,7 +724,7 @@ fn execute_inner(
     recording.event("signal_path_confirmed", json!({"mode":c.background.mode,"confirmation_source":if c.background.mode==BackgroundMode::Manual {"operator"} else {"controller_state"},"physical_optical_sensor_confirmed":false}))?;
     // The first acquisition is retained, reviewed, then becomes point 0 / repeat 0.
     let actual = move_point(c, 0, plan.positions_mm[0], stage, stop, events, recording)?;
-    let first = acquire_point(
+    let (first, acquisition_extrapolated) = acquire_point(
         c,
         plan,
         0,
@@ -687,6 +782,12 @@ fn execute_inner(
     let accepted_plan = accepted.plan()?;
     recording.analysis(&accepted, &accepted_plan)?;
     let _ = events.send(Event::AnalysisAccepted(Box::new(accepted.clone())));
+    if acquisition_extrapolated
+        || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
+            && outside_excitation_calibration(&accepted_plan, actual))
+    {
+        recording.excitation_extrapolated(first.point_index, first.repeat_index, actual)?;
+    }
     recording.sample(&first_sample, &background)?;
     let _ = events.send(Event::Sample(Arc::new(first_sample)));
     check_stop(stop)?;
@@ -700,7 +801,7 @@ fn execute_inner(
             if index == 0 && repeat == 0 {
                 continue;
             }
-            let a = acquire_point(
+            let (a, acquisition_extrapolated) = acquire_point(
                 &accepted,
                 &accepted_plan,
                 index,
@@ -715,6 +816,12 @@ fn execute_inner(
                 &background,
             )?;
             let sample = a.analyze(&accepted, &accepted_plan, &accepted.initial_analysis())?;
+            if acquisition_extrapolated
+                || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
+                    && outside_excitation_calibration(&accepted_plan, actual))
+            {
+                recording.excitation_extrapolated(index, repeat, actual)?;
+            }
             recording.sample(&sample, &background)?;
             let _ = events.send(Event::Sample(Arc::new(sample)));
             check_stop(stop)?;
@@ -730,7 +837,7 @@ fn move_point(
     stop: &AtomicBool,
     events: &mpsc::Sender<Event>,
     recording: &mut Recording,
-) -> Result<f64, String> {
+) -> Result<f64, RunError> {
     check_stop(stop)?;
     let _ = events.send(Event::State(format!("Moving CONEX to {target:.6} mm")));
     recording.event(
@@ -749,6 +856,12 @@ fn move_point(
     wait_settle(c.scan.settle_s, stop)?;
     Ok(actual)
 }
+fn outside_excitation_calibration(plan: &ple_core::Plan, actual: f64) -> bool {
+    let anchors = &plan.excitation_anchors;
+    matches!((anchors.first(), anchors.last()), (Some(lo), Some(hi))
+        if actual < lo.position_mm || actual > hi.position_mm)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn acquire_point(
     c: &Config,
@@ -763,11 +876,15 @@ fn acquire_point(
     events: &mpsc::Sender<Event>,
     recording: &mut Recording,
     bg: &Spectrum,
-) -> Result<Acquisition, String> {
+) -> Result<(Acquisition, bool), RunError> {
     check_stop(stop)?;
     let (power_w, power_time, sensor_wavelength, power_hardware, power_observation) =
         if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration {
-            let predicted = ple_core::interpolate_excitation(&plan.excitation_anchors, actual)?;
+            let predicted = ple_core::interpolate_excitation_at_readback(
+                &plan.excitation_anchors,
+                actual,
+                c.stage.tolerance_mm,
+            )?;
             power.read_at(predicted)?
         } else {
             power.read_with_wavelength()?
@@ -803,6 +920,9 @@ fn acquire_point(
         corrected_counts: Vec::new(),
     };
     recording.acquired(&acquired)?;
+    let excitation_extrapolated = c.power.wavelength_mode
+        == ple_core::PowerWavelengthMode::PositionCalibration
+        && outside_excitation_calibration(plan, actual);
     if !matching_acquisition_settings(&acquired.spectrum.settings, &bg.settings) {
         return Err("LightField settings changed after BG; raw acquisition retained".into());
     }
@@ -814,7 +934,7 @@ fn acquire_point(
     {
         return Err("Power normalization overflow; raw acquisition retained".into());
     }
-    Ok(acquired)
+    Ok((acquired, excitation_extrapolated))
 }
 
 fn matching_acquisition_settings(a: &serde_json::Value, b: &serde_json::Value) -> bool {
@@ -1101,6 +1221,199 @@ mod tests {
         (controller, config, dir)
     }
     #[test]
+    fn automatic_bg_with_missing_shutter_gui_returns_the_original_connection_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = dir.path().join("fake_lightfield.py");
+        std::fs::write(
+            &script,
+            r#"
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    op = request["op"]
+    assert op in ("connect_spectrometer", "configure_spectrometer", "shutdown"), op
+    print(json.dumps({"id": request["id"], "ok": True, "result": {"shutdown": True}}))
+"#,
+        )
+        .unwrap();
+        let missing = dir.path().join("missing-shutter.json");
+        let mut config = Config {
+            mode: ple_core::Mode::Hardware,
+            output_dir: dir.path().to_string_lossy().into(),
+            ..Default::default()
+        };
+        config.spectrometer.experiment = "fake".into();
+        config.spectrometer.bridge_script = script.to_string_lossy().into();
+        config.background.mode = BackgroundMode::Automatic;
+        config.background.backend = ple_core::ShutterBackend::KohdalabShutter;
+        config.background.endpoint = missing.to_string_lossy().into();
+        let (tx, rx) = mpsc::channel();
+        let stop = Arc::new(AtomicBool::new(false));
+        let handle = Mutex::new(None);
+        let mut spec = Spectrometer::connect(
+            &config,
+            tx.clone(),
+            &handle,
+            Arc::new(Mutex::new(None)),
+            stop.clone(),
+        )
+        .unwrap();
+        let stage = StageClient::spawn(tx.clone());
+        let power = PowerClient::spawn(tx.clone());
+        power.connect(Config::default()).unwrap();
+        let (_command_tx, commands) = mpsc::channel();
+        let plan = config.plan().unwrap();
+        let mut recording = Recording::create(&config, &plan).unwrap();
+        let error = execute(
+            &config,
+            &plan,
+            &mut spec,
+            &stage,
+            &power,
+            &stop,
+            &commands,
+            &tx,
+            &mut recording,
+        )
+        .unwrap_err();
+        let error = error.to_string();
+        assert_eq!(
+            error,
+            format!(
+                "shutter GUI endpoint must be a descriptor file: {}",
+                missing.display()
+            )
+        );
+        let ctx = eframe::egui::Context::default();
+        let mut app = crate::PleApp::with_context(&ctx, crate::Launch::default());
+        tx.send(Event::Finished {
+            state: RunState::Failed,
+            error: Some(error.clone()),
+        })
+        .unwrap();
+        app.controller.events = rx;
+        app.events();
+        assert_eq!(app.message.as_deref(), Some(error.as_str()));
+        assert!(app.recovery_reason().is_none());
+        assert!(!recording.directory.join("metadata/shutter.json").exists());
+        stage.shutdown();
+        power.shutdown();
+    }
+
+    #[test]
+    fn run_continues_and_logs_once_for_readback_below_first_calibration_anchor() {
+        use std::io::{BufRead, BufReader, Write};
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut config = Config {
+            output_dir: dir.path().to_string_lossy().into(),
+            excitation_method: ple_core::ExcitationMethod::Calibration,
+            ..Default::default()
+        };
+        config.background.mode = BackgroundMode::Automatic;
+        config.scan.stop_mm = 18.;
+        config.scan.settle_s = 0.;
+        config.scan.repeats = 1;
+        let actual = 18. - config.stage.tolerance_mm / 2.;
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let stage_config = Config {
+            mode: ple_core::Mode::Hardware,
+            stage: ple_core::StageConfig {
+                host: "127.0.0.1".into(),
+                port: listener.local_addr().unwrap().port(),
+                ..config.stage.clone()
+            },
+            ..config.clone()
+        };
+        let server = thread::spawn(move || {
+            let mut moves_remaining = 2;
+            loop {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().unwrap())
+                    .read_line(&mut line)
+                    .unwrap();
+                match line.trim_end() {
+                    "MOVE 18.00000000" => {
+                        moves_remaining -= 1;
+                        writeln!(stream, "MOVED {actual}").unwrap();
+                    }
+                    "GET" => {
+                        writeln!(stream, "{actual}").unwrap();
+                        if moves_remaining == 0 {
+                            break;
+                        }
+                    }
+                    other => panic!("unexpected mock stage command: {other}"),
+                }
+            }
+        });
+        let (tx, rx) = mpsc::channel();
+        let stage = StageClient::spawn(tx.clone());
+        stage.connect(stage_config).unwrap();
+        let power = PowerClient::spawn(tx.clone());
+        power.connect(config.clone()).unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut spec = Spectrometer::connect(
+            &config,
+            tx.clone(),
+            &Mutex::new(None),
+            Arc::new(Mutex::new(None)),
+            stop.clone(),
+        )
+        .unwrap();
+        for mode in [
+            ple_core::PowerWavelengthMode::Fixed,
+            ple_core::PowerWavelengthMode::PositionCalibration,
+        ] {
+            config.power.wavelength_mode = mode;
+            let plan = config.plan().unwrap();
+            let mut recording = Recording::create(&config, &plan).unwrap();
+            let (command_tx, commands) = mpsc::channel();
+            command_tx
+                .send(Command::SelectAnalysis(Box::new(config.clone())))
+                .unwrap();
+            execute(
+                &config,
+                &plan,
+                &mut spec,
+                &stage,
+                &power,
+                &stop,
+                &commands,
+                &tx,
+                &mut recording,
+            )
+            .unwrap();
+            let log = std::fs::read_to_string(recording.directory.join("analysis.log")).unwrap();
+            assert_eq!(
+                log.lines()
+                    .filter(|line| line.contains("\texcitation_extrapolated\t"))
+                    .count(),
+                1
+            );
+            let sample = rx
+                .try_iter()
+                .find_map(|event| match event {
+                    Event::Sample(sample) => Some(sample),
+                    _ => None,
+                })
+                .unwrap();
+            assert_eq!(sample.actual_mm, actual);
+            assert!((sample.excitation_nm - 699.975).abs() < 1e-9);
+            if mode == ple_core::PowerWavelengthMode::PositionCalibration {
+                assert_eq!(
+                    sample.power_sensor_wavelength_nm,
+                    Some(sample.excitation_nm)
+                );
+            }
+        }
+        stage.shutdown();
+        power.shutdown();
+        server.join().unwrap();
+    }
+
+    #[test]
     fn power_calibration_tracks_before_exposure_and_mismatch_retains_raw() {
         for (tolerance, success) in [(1., true), (0.01, false)] {
             let (controller, mut config, _dir) = setup();
@@ -1126,9 +1439,10 @@ mod tests {
                     }
                     Event::Sample(s) => {
                         count += 1;
-                        let predicted = ple_core::interpolate_excitation(
+                        let predicted = ple_core::interpolate_excitation_at_readback(
                             &config.plan().unwrap().excitation_anchors,
                             s.actual_mm,
+                            config.stage.tolerance_mm,
                         )
                         .unwrap();
                         assert_eq!(s.power_sensor_wavelength_nm, Some(predicted));
@@ -1136,7 +1450,7 @@ mod tests {
                     }
                     Event::Finished { state, error } => {
                         assert_eq!(
-                            state,
+                            state.label(),
                             if success { "Completed" } else { "Failed" },
                             "{error:?}"
                         );
@@ -1228,7 +1542,7 @@ mod tests {
                     assert_eq!(s.corrected_counts.len(), 641);
                 }
                 Event::Finished { state, error } => {
-                    assert_eq!(state, "Completed", "{error:?}");
+                    assert_eq!(state.label(), "Completed", "{error:?}");
                     assert!(error.is_none());
                     break;
                 }
@@ -1319,7 +1633,7 @@ mod tests {
                     }
                 }
                 Event::Finished { state, error } => {
-                    assert_eq!(state, "Completed", "{error:?}");
+                    assert_eq!(state.label(), "Completed", "{error:?}");
                     break;
                 }
                 _ => {}
@@ -1353,7 +1667,7 @@ mod tests {
                 }
                 Event::Sample(_) => panic!("Review was not accepted"),
                 Event::Finished { state, .. } => {
-                    assert_eq!(state, "Stopped");
+                    assert_eq!(state.label(), "Stopped");
                     break;
                 }
                 _ => {}
@@ -1383,7 +1697,7 @@ mod tests {
                 Event::RunCreated(p) => path = Some(p),
                 Event::Sample(_) => panic!("Stopped before BG confirmation but acquired a signal"),
                 Event::Finished { state, .. } => {
-                    assert_eq!(state, "Stopped");
+                    assert_eq!(state.label(), "Stopped");
                     break;
                 }
                 _ => {}

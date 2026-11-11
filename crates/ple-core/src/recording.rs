@@ -261,6 +261,18 @@ impl Recording {
         .map_err(|e| e.to_string())?;
         self.log.flush().map_err(|e| e.to_string())
     }
+    pub fn excitation_extrapolated(
+        &mut self,
+        point_index: usize,
+        repeat_index: u32,
+        actual_mm: f64,
+    ) -> Result<(), String> {
+        self.log(
+            "INFO",
+            "excitation_extrapolated",
+            json!({"point_index":point_index,"repeat_index":repeat_index,"actual_mm":actual_mm}),
+        )
+    }
     pub fn hardware(&mut self, hardware: Value) -> Result<(), String> {
         atomic_json(
             &self.directory.join("hardware.json"),

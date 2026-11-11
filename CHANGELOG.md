@@ -2,6 +2,12 @@
 
 ## Unreleased / 未リリース
 
+- Keep separate recovery latches for spectrometer Stop, shutter cleanup, stage Stop and a run interrupted with unconfirmed device state. A LightField idle confirmation no longer clears an unconfirmed shutter close; a shutter latch is cleared by a spectrometer disconnect that confirms closure. / 分光器Stop・シャッター・ステージStop・未確認のまま中断した測定の復帰ラッチを個別に保持します。LightFieldのidle確認ではシャッター閉の未確認を解除せず、シャッターのラッチは分光器切断時の閉確認で解除します。
+- Convert a stage readback just outside the calibration range by extrapolating the end segment within the stage position tolerance, and log each such acquisition in `analysis.log`. Commanded positions outside the calibration range are still rejected. / 校正範囲をわずかに外れた読み戻し位置は、ステージ位置許容差以内に限り端の区間の傾きで外挿し、該当する取得を `analysis.log` に記録します。校正範囲外の指令位置は従来どおり拒否します。
+- Read bridge stderr as bytes, replace invalid UTF-8, bound line length, and start the bridge with `PYTHONIOENCODING=utf-8`. / bridgeのstderrをバイト列で読み、不正なUTF-8を置換し、行長を制限します。bridgeは `PYTHONIOENCODING=utf-8` で起動します。
+- Disconnect the stage only after three consecutive position-monitor failures; a move result takes precedence over an overlapping monitor failure. / 位置監視が3回連続で失敗した場合だけステージを切断し、移動と重なった監視失敗より移動結果を優先します。
+- Report the original shutter connection error when automatic BG never acquired a shutter, without raising device recovery. / 自動BGでシャッターを確保できなかった場合は元の接続エラーを返し、機器復帰の表示にしません。
+
 ## 0.3.11 — 2026-11-10
 
 - Save analysis CSV, raw CSV, lifecycle log and conditions JSON as a linked, hashed measurement bundle; retain old data and configuration compatibility. / 解析CSV・raw CSV・ライフサイクルlog・条件JSONを参照・ハッシュで結び、既存データ・設定の互換性を維持します。
