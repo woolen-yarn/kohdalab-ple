@@ -1,26 +1,26 @@
-# KohdaLab PLE 0.3.12 preview
+# KohdaLab PLE 0.3.13 Preview
 
 ## Changes / 変更内容
 
-- Keep separate recovery latches for spectrometer Stop, shutter cleanup, stage Stop and a run interrupted with unconfirmed device state. A LightField idle confirmation no longer clears an unconfirmed shutter close. When shutter closure is unconfirmed, the recovery dialog asks for a spectrometer disconnect, which confirms closure, instead of offering Retry Stop. / 分光器Stop・シャッター・ステージStop・未確認のまま中断した測定の復帰ラッチを個別に保持します。LightFieldのidle確認ではシャッター閉の未確認を解除しません。シャッター閉が未確認のときは、復帰ダイアログでRetry Stopの代わりに分光器の切断（切断時に閉を確認）を案内します。
-- Convert a stage readback just outside the calibration range by extrapolating the end segment within the configured stage position tolerance, and log each such acquisition in `analysis.log`. Commanded positions outside the calibration range are still rejected. / 校正範囲をわずかに外れた読み戻し位置は、設定済みのステージ位置許容差以内に限り端の区間の傾きで外挿し、該当する取得を `analysis.log` に記録します。校正範囲外の指令位置は従来どおり拒否します。
-- Read bridge stderr as bytes, replace invalid UTF-8 and bound line length, so SDK messages in a non-UTF-8 code page no longer end bridge logging. The bridge starts with `PYTHONIOENCODING=utf-8`. / bridgeのstderrをバイト列で読み、不正なUTF-8を置換して行長を制限します。UTF-8以外のコードページで出たSDKメッセージでbridgeのログが止まらなくなります。bridgeは `PYTHONIOENCODING=utf-8` で起動します。
-- Disconnect the stage only after three consecutive position-monitor failures; a move result takes precedence over an overlapping monitor failure. / 位置監視が3回連続で失敗した場合だけステージを切断し、移動と重なった監視失敗より移動結果を優先します。
-- Report the original shutter connection error when automatic BG never acquired a shutter, without raising device recovery. / 自動BGでシャッターを確保できなかった場合は元の接続エラーを返し、機器復帰の表示にしません。
-- Bring `START-HERE.md`, the user guide, the installation guide and the hardware qualification checklist up to the current package, add a qualification record template, and check release version references in CI. / `START-HERE.md`・操作ガイド・導入手順・実機確認チェックリストを現行の配布版に合わせ、実機確認記録の雛形を追加し、版表記の整合をCIで検査します。
+- The CONEX reference adapter requires a shared token before listening outside IPv4 loopback. Local use on the default `127.0.0.1` address can still omit the token. / CONEX参照アダプターはIPv4ループバック外で待ち受ける場合に共有トークンが必要です。既定の `127.0.0.1` では引き続きトークンを省略できます。
+- LightField settings are checked immediately after background acquisition. If a required setting cannot be read, PLE names the setting, retains the acquired data, and stops before signal acquisition. A changed setting is reported separately. / BG取得直後にLightField設定を検査します。必要な項目を読み戻せない場合は項目名を表示し、取得済みデータを保持して信号測定前に停止します。設定の変化は別のエラーとして表示します。
+- Run JSON files are replaced in one operation. At finalization, PLE compares `points.csv` with the sample metadata and saved acquisition count. A mismatch leaves the raw data available and records `incomplete` and the reason in `analysis.run.json`. Open Results ignores legacy `*.previous.json` files. / runのJSONを一度の操作で置換します。終了時に `points.csv`、サンプルメタデータ、保存済み取得数を照合し、不整合時は生データを保持したうえで `analysis.run.json` に `incomplete` と理由を記録します。Open Resultsは旧runの `*.previous.json` を読み飛ばします。
+- Windows Open Results opens the selected folder. The PLE GUI API now advertises the existing behavior that a valid token can request Stop without a lease. / WindowsのOpen Resultsで選択したフォルダーを開けるようにしました。PLE GUI APIの能力宣言に、有効なトークンでleaseなしにStopを要求できる既存動作を反映しました。
+
+[PR #16](https://github.com/woolen-yarn/kohdalab-ple/pull/16) · [PR #17](https://github.com/woolen-yarn/kohdalab-ple/pull/17)
 
 ## Compatibility / 互換性
 
-Configuration and GUI API schemas, saved file columns, fields and units are unchanged. Existing profiles and saved runs remain readable without migration. The only change to derived values is the excitation wavelength of an acquisition whose stage readback lies outside the calibration range by no more than the stage position tolerance: such a run previously stopped with an error and now continues with an extrapolated value and a log line.
+If you use the reference adapter across PCs, set `KOHDA_CONEX_TOKEN` or `--token` on the controller PC and set the environment variable named by `stage.token_env` to the same secret on the acquisition PC. Existing profiles and saved data remain readable. The CSV columns, units and SHA-256 coverage are unchanged.
 
-設定とGUI APIのスキーマ、保存ファイルの列・項目・単位は変更していません。既存設定と保存済みrunは移行なしで読めます。導出値の変更は、読み戻し位置がステージ位置許容差以内で校正範囲を外れた取得の励起波長だけです。従来はエラーで停止していた測定が、外挿値と `analysis.log` の記録を伴って続行します。
-
-The Preview channel remains unchanged. Windows physical acquisition requires manufacturer SDKs; the pinned Shutter companion is unchanged.
-
-Preview扱いは維持します。Windows実機取得にはメーカーSDKが必要で、固定版Shutter companionは変更しません。
+参照アダプターを別PCから使う場合は、制御PCで `KOHDA_CONEX_TOKEN` または `--token` を設定し、取得PCの `stage.token_env` が指す環境変数に同じトークンを設定してください。既存の設定と保存データは引き続き読めます。CSVの列・単位・SHA-256の対象は従来どおりです。
 
 ## Packages and validation / 配布と検証
 
-Windows x64 Setup and portable ZIP, macOS Apple-silicon application, corresponding source and SHA-256 checksums are provided. Release validation covers software tests, extracted packages, isolated installer lifecycle and simulation. The recovery, readback and stage-monitor changes were exercised with simulated devices only; no physical-device fault/stop qualification is claimed. Windows binaries are unsigned; Mac apps are ad hoc signed and not notarized.
+The tag-driven workflow builds Windows x64 Setup and portable ZIP, the macOS Apple-silicon app ZIP, and corresponding source. The release includes SHA-256 checksums and `VALIDATION.json`. Windows packages are unsigned. The macOS app uses ad hoc signing and has no Apple notarization.
 
-Windows x64 Setup／portable ZIP、macOS Apple siliconアプリ、対応ソース・SHA-256を提供します。ソフトウェア試験・展開後の配布版・隔離環境のインストーラー動作・模擬測定を確認します。復帰・読み戻し・位置監視の変更は模擬機器でのみ確認しており、実機異常・停止試験の合格は主張しません。Windowsは未署名、Macはアドホック署名・Apple公証なしです。
+タグ起動のワークフローでWindows x64 Setup・portable ZIP、macOS Apple siliconアプリZIP、対応ソースをビルドします。配布版にはSHA-256と `VALIDATION.json` が付きます。Windows版は未署名です。macOS版はアドホック署名で、Apple公証は受けていません。
+
+This Preview is for hardware qualification. Packaged applications need no Rust. Demo needs no instruments, and physical acquisition requires Windows, 64-bit Python and the manufacturer software. Software tests, installer checks and Demo runs provide software evidence. Physical instruments remain unqualified for this Preview.
+
+実機確認用Previewです。配布版の起動にRustは不要で、Demoは機器不要です。実機取得にはWindows・64-bit Python・メーカーソフトが必要です。ソフトウェア試験、インストーラー検査、Demo測定はソフトウェアの検証です。このPreviewの実機検証は未実施です。

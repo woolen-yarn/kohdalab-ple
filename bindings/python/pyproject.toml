@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kohdalab-ple"
-version = "0.3.12"
+version = "0.3.13"
 description = "Python client for the Rust KohdaLab PLE GUI API"
 requires-python = ">=3.10"
 license = {text = "MIT"}
