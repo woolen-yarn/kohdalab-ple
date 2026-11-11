@@ -40,10 +40,12 @@ class ConexServerStartupTests(unittest.TestCase):
             with (
                 self.subTest(args=args, env=env),
                 patch.object(sys, "argv", ["conex_server.py", "--host", "0.0.0.0", *args]),
-                patch.dict(os.environ, env, clear=True),
+                patch.dict(os.environ),
                 patch.object(conex, "ConexRequestServer") as server,
                 contextlib.redirect_stderr(io.StringIO()) as stderr,
             ):
+                os.environ.pop("KOHDA_CONEX_TOKEN", None)
+                os.environ.update(env)
                 with self.assertRaises(SystemExit) as error:
                     conex.main()
                 self.assertEqual(error.exception.code, 2)
@@ -53,7 +55,6 @@ class ConexServerStartupTests(unittest.TestCase):
     def test_loopback_without_token_and_remote_with_token_are_allowed(self):
         for args, env, expected_host, expected_token in [
             ([], {}, "127.0.0.1", None),
-            (["--host", "localhost"], {}, "127.0.0.1", None),
             (["--host", "127.0.0.2"], {}, "127.0.0.2", None),
             (["--host", "0.0.0.0", "--token", "cli"], {"KOHDA_CONEX_TOKEN": "env"}, "0.0.0.0", "cli"),
             (["--host", "0.0.0.0"], {"KOHDA_CONEX_TOKEN": "env"}, "0.0.0.0", "env"),
@@ -61,13 +62,27 @@ class ConexServerStartupTests(unittest.TestCase):
             with (
                 self.subTest(args=args, env=env),
                 patch.object(sys, "argv", ["conex_server.py", *args]),
-                patch.dict(os.environ, env, clear=True),
+                patch.dict(os.environ),
                 patch.object(conex, "ConexRequestServer") as server,
             ):
+                os.environ.pop("KOHDA_CONEX_TOKEN", None)
+                os.environ.update(env)
                 self.assertEqual(conex.main(), 0)
                 self.assertEqual(server.call_args.args[0], (expected_host, 9000))
                 self.assertEqual(server.call_args.args[2], expected_token)
                 server.return_value.serve_forever.assert_called_once()
+
+
+    def test_hostname_binds_to_the_resolved_loopback_address(self):
+        with (
+            patch.object(sys, "argv", ["conex_server.py", "--host", "localhost"]),
+            patch.dict(os.environ, {"KOHDA_CONEX_TOKEN": ""}),
+            patch.object(conex.socket, "gethostbyname", return_value="127.0.0.2") as resolve,
+            patch.object(conex, "ConexRequestServer") as server,
+        ):
+            self.assertEqual(conex.main(), 0)
+        resolve.assert_called_once_with("localhost")
+        self.assertEqual(server.call_args.args[0], ("127.0.0.2", 9000))
 
 
 class ConexControllerTests(unittest.TestCase):
