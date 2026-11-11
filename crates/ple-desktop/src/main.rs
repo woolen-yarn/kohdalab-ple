@@ -55,7 +55,7 @@ struct PleApp {
     controller: Controller,
     api: Option<api_ui::Runtime>,
     api_cleanup: bool,
-    api_cleanup_error: Option<String>,
+    cleanup_errors: [Option<String>; 3],
     plot_cache: Option<presentation::PlotDataCache>,
     config: Config,
     connected: [bool; 3],
@@ -149,7 +149,7 @@ impl PleApp {
             controller,
             api: launch.api_server.map(api_ui::Runtime::new),
             api_cleanup: false,
-            api_cleanup_error: None,
+            cleanup_errors: Default::default(),
             plot_cache: None,
             config,
             connected: [false; 3],
@@ -232,12 +232,15 @@ impl PleApp {
     fn start(&mut self) {
         self.start_for(None);
     }
+    fn cleanup_error(&self) -> Option<String> {
+        self.cleanup_errors.iter().flatten().next().cloned()
+    }
     fn recovery_reason(&self) -> Option<String> {
         let (pending, error) = self.controller.stop_status();
         if pending {
             Some("Waiting for Stop and device readback".into())
         } else {
-            error.or_else(|| self.api_cleanup_error.clone())
+            error.or_else(|| self.cleanup_error())
         }
     }
     fn start_for(&mut self, external_id: Option<String>) {
@@ -421,23 +424,20 @@ impl PleApp {
                         Ok(v) => {
                             self.spectrometer_settings = v;
                             self.message = None;
-                            self.api_cleanup_error = None;
+                            self.cleanup_errors[engine::CleanupCause::SpectrometerStop as usize] =
+                                None;
                             self.log("LightField settings applied and read back");
                         }
                         Err(e) => {
                             self.log(&e);
-                            self.api_cleanup_error =
+                            self.cleanup_errors[engine::CleanupCause::SpectrometerStop as usize] =
                                 Some(format!("Spectrometer configuration was not confirmed: {e}"));
                             self.message = Some(e);
                         }
                     }
                 }
-                Event::Cleanup { confirmed, error } => {
-                    self.api_cleanup_error = if confirmed {
-                        None
-                    } else {
-                        error.or_else(|| Some("Device cleanup unconfirmed".into()))
-                    };
+                Event::Cleanup { cause, result } => {
+                    self.cleanup_errors[cause as usize] = result.err();
                 }
                 Event::Background(bg) => {
                     self.log(format!("BG saved: {} bins", bg.counts.len()));
@@ -457,19 +457,11 @@ impl PleApp {
                     self.run_dir = path;
                 }
                 Event::Finished { state, error } => {
-                    if state.contains("unconfirmed")
-                        || error.as_ref().is_some_and(|e| {
-                            e.contains("shutter closed state could not be confirmed")
-                        })
-                    {
-                        self.api_cleanup_error =
-                            Some(error.clone().unwrap_or_else(|| state.clone()));
-                    }
                     self.busy = false;
                     self.finished_elapsed = self.started.map(|t| t.elapsed().as_secs_f64());
                     self.awaiting = 0;
-                    self.state = state.clone();
-                    self.log(state);
+                    self.state = state.label().into();
+                    self.log(state.label());
                     if let Some(e) = error {
                         self.log(&e);
                         self.message = Some(e);

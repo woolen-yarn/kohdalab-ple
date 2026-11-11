@@ -27,7 +27,7 @@ impl Note {
     pub fn from_event(e: &Event) -> Self {
         match e {
             Event::Device { device, connected } => Self::Device(device, *connected),
-            Event::Finished { state, error } => Self::Finished(state.clone(), error.clone()),
+            Event::Finished { state, error } => Self::Finished(state.label().into(), error.clone()),
             Event::ManualMoveFinished(r) => Self::Manual(r.clone()),
             Event::SpectrometerConfigured(r) => Self::Spectrometer(r.clone()),
             _ => Self::None,
@@ -73,7 +73,7 @@ impl PleApp {
         json!({"application":"kohdalab-ple","api_version":1,"phase":self.state,
             "busy":self.busy||self.manual_moving||self.pending_connections.iter().any(|p|*p)||self.spectrometer_configuring,
             "operation_busy":self.operation_busy(),
-            "cleanup_pending":self.api_cleanup||stop_pending,"cleanup_error":stop_error.or_else(||self.api_cleanup_error.clone()),
+            "cleanup_pending":self.api_cleanup||stop_pending,"cleanup_error":stop_error.or_else(||self.cleanup_error()),
             "mode":self.config.mode,"rows":self.samples.len(),"planned_rows":self.run_count,"run_dir":self.run_dir,
             "awaiting":match self.awaiting{1=>"background_confirmation",2=>"signal_confirmation",3=>"analysis_selection",_=>"none"},
             "devices":{"spectrometer":self.connected[0],"stage":self.connected[1],"power":self.connected[2]},
@@ -83,7 +83,7 @@ impl PleApp {
     }
     pub(super) fn poll_api(&mut self, ctx: &egui::Context) {
         let (_stop_pending, stop_error) = self.controller.stop_status();
-        let cleanup_error = stop_error.is_some() || self.api_cleanup_error.is_some();
+        let cleanup_error = stop_error.is_some() || self.cleanup_error().is_some();
         let cleanup_verified = self.api_cleanup
             && !self.busy
             && !self.manual_moving
@@ -980,7 +980,8 @@ mod tests {
         .unwrap();
         assert_eq!(pending["cleanup"], "pending");
         app.busy = false;
-        app.api_cleanup_error = Some("cleanup acknowledgement failed".into());
+        app.cleanup_errors[crate::engine::CleanupCause::SpectrometerStop as usize] =
+            Some("cleanup acknowledgement failed".into());
         let _ = ctx.run_ui(Default::default(), |ui| app.poll_api(ui.ctx()));
         assert!(app.api.as_ref().unwrap().session.lease.is_some());
         assert!(app.api_cleanup);
@@ -1034,7 +1035,8 @@ mod tests {
     #[test]
     fn unconfirmed_cleanup_rejects_new_mutations_without_reserving_jobs() {
         let (mut app, _ctx, _dir, lease) = setup();
-        app.api_cleanup_error = Some("MFF closed state could not be confirmed".into());
+        app.cleanup_errors[crate::engine::CleanupCause::Shutter as usize] =
+            Some("MFF closed state could not be confirmed".into());
         for action in ["start", "move", "apply_spectrometer"] {
             let id = crate::remote_gui::new_id().unwrap();
             let error = call(&mut app, json!({"action":action,"lease":lease,"request_id":id,"position_mm":18.,"settings":{"exposure_ms":1.}})).unwrap_err();

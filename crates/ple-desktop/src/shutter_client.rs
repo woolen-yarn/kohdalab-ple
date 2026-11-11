@@ -58,13 +58,42 @@ pub struct ExternalShutter {
     heartbeat: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
+pub struct ShutterConnectError {
+    pub message: String,
+    pub unconfirmed_owner: Option<Arc<ExternalShutter>>,
+}
+
+impl From<String> for ShutterConnectError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            unconfirmed_owner: None,
+        }
+    }
+}
+
+impl From<&str> for ShutterConnectError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
+impl std::fmt::Debug for ShutterConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShutterConnectError")
+            .field("message", &self.message)
+            .field("has_unconfirmed_owner", &self.unconfirmed_owner.is_some())
+            .finish()
+    }
+}
+
 impl ExternalShutter {
     pub fn connect(
         endpoint: Option<PathBuf>,
         channel: usize,
         timeout_s: f64,
         cancel: Arc<AtomicBool>,
-    ) -> Result<Arc<Self>, String> {
+    ) -> Result<Arc<Self>, ShutterConnectError> {
         if !timeout_s.is_finite() || timeout_s <= 0.0 {
             return Err("KohdaLab shutter timeout must be a positive finite number".into());
         }
@@ -107,14 +136,17 @@ impl ExternalShutter {
             heartbeat: Mutex::new(None),
         });
         if let Err(error) = shutter.start_heartbeat() {
-            let cleanup = shutter.shutdown();
-            return Err(match cleanup {
+            return Err(match shutter.shutdown() {
                 Ok(()) => format!(
                     "start shutter heartbeat: {error}; shutter was closed and lease released"
-                ),
-                Err(cleanup) => {
-                    format!("start shutter heartbeat: {error}; cleanup is unconfirmed: {cleanup}")
-                }
+                )
+                .into(),
+                Err(cleanup) => ShutterConnectError {
+                    message: format!(
+                        "start shutter heartbeat: {error}; cleanup is unconfirmed: {cleanup}"
+                    ),
+                    unconfirmed_owner: Some(shutter),
+                },
             });
         }
         Ok(shutter)
@@ -936,7 +968,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert!(error.contains("STATE"));
+        assert!(error.message.contains("STATE"));
     }
     #[test]
     fn command_error_is_not_confirmed_as_close_or_open() {
@@ -981,7 +1013,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert!(error.contains("lease_busy"));
+        assert!(error.message.contains("lease_busy"));
     }
     #[test]
     fn stop_during_open_never_sends_a_second_open() {
@@ -1189,7 +1221,7 @@ mod tests {
         )
         .err()
         .unwrap();
-        assert!(error.contains("busy"));
+        assert!(error.message.contains("busy"));
     }
 
     #[test]

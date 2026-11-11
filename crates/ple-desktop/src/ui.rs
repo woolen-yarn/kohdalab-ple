@@ -1511,11 +1511,69 @@ mod tests {
         assert_eq!(app.geometry["ple_power_live"][2], 306.);
     }
     #[test]
+    fn lightfield_idle_and_retry_stop_leave_shutter_recovery_latched() {
+        use crate::engine::{CleanupCause, Event};
+
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        app.connected = [true; 3];
+        let (sender, receiver) = std::sync::mpsc::channel();
+        app.controller.events = receiver;
+        let cleanup = |cause, result| sender.send(Event::Cleanup { cause, result }).unwrap();
+
+        cleanup(
+            CleanupCause::Shutter,
+            Err("Shutter close was not confirmed".into()),
+        );
+        cleanup(CleanupCause::SpectrometerStop, Ok(()));
+        app.events();
+        assert_eq!(
+            app.recovery_reason().as_deref(),
+            Some("Shutter close was not confirmed")
+        );
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(!app.busy);
+
+        // Same controller action as Retry Stop / verify idle.
+        app.controller.stop();
+        cleanup(CleanupCause::SpectrometerStop, Ok(()));
+        cleanup(CleanupCause::Stage, Ok(()));
+        app.events();
+        assert_eq!(
+            app.recovery_reason().as_deref(),
+            Some("Shutter close was not confirmed")
+        );
+        click(&mut app, &ctx, "run_start");
+        assert!(!app.busy);
+
+        cleanup(
+            CleanupCause::Stage,
+            Err("Stage Stop was not confirmed".into()),
+        );
+        cleanup(CleanupCause::Shutter, Ok(()));
+        app.events();
+        assert_eq!(
+            app.recovery_reason().as_deref(),
+            Some("Stage Stop was not confirmed")
+        );
+        click(&mut app, &ctx, "run_start");
+        assert!(!app.busy);
+
+        cleanup(CleanupCause::Stage, Ok(()));
+        app.events();
+        frame(&mut app, &ctx, vec![]);
+        click(&mut app, &ctx, "run_start");
+        assert!(app.busy);
+    }
+
+    #[test]
     fn recovery_blocks_run_and_manual_motion_but_can_be_resolved() {
         let ctx = egui::Context::default();
         let mut app = PleApp::with_context(&ctx, Launch::default());
         app.connected = [true; 3];
-        app.api_cleanup_error = Some("Closed state unconfirmed".into());
+        app.cleanup_errors[crate::engine::CleanupCause::Shutter as usize] =
+            Some("Closed state unconfirmed".into());
         app.device_expanded[1] = true;
         frame(&mut app, &ctx, vec![]);
         click(&mut app, &ctx, "run_start");
@@ -1523,7 +1581,7 @@ mod tests {
         click(&mut app, &ctx, "manual_move");
         assert!(!app.manual_moving);
         assert!(!app.locked(), "device reconnect must remain available");
-        app.api_cleanup_error = None;
+        app.cleanup_errors[crate::engine::CleanupCause::Shutter as usize] = None;
         frame(&mut app, &ctx, vec![]);
         click(&mut app, &ctx, "run_start");
         assert!(app.busy);

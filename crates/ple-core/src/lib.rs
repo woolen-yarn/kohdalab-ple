@@ -523,17 +523,34 @@ impl Config {
     }
 }
 pub fn interpolate_excitation(anchors: &[PeakAnchor], p: f64) -> Result<f64, String> {
+    interpolate_excitation_with_margin(anchors, p, 1e-9, false)
+}
+
+pub fn interpolate_excitation_at_readback(
+    anchors: &[PeakAnchor],
+    p: f64,
+    tolerance_mm: f64,
+) -> Result<f64, String> {
+    interpolate_excitation_with_margin(anchors, p, tolerance_mm, true)
+}
+
+fn interpolate_excitation_with_margin(
+    anchors: &[PeakAnchor],
+    p: f64,
+    margin_mm: f64,
+    extrapolate: bool,
+) -> Result<f64, String> {
     if anchors.len() < 2 || !p.is_finite() {
         return Err("Missing or invalid excitation calibration".into());
     }
     let lo = anchors[0].position_mm;
     let hi = anchors[anchors.len() - 1].position_mm;
-    if p < lo - 1e-9 || p > hi + 1e-9 {
+    if p < lo - margin_mm || p > hi + margin_mm {
         return Err(format!(
             "CONEX {p:0.5} mm lies outside excitation calibration ({lo:0.5}–{hi:0.5} mm)"
         ));
     }
-    let p = p.clamp(lo, hi);
+    let p = if extrapolate { p } else { p.clamp(lo, hi) };
     let upper = anchors
         .partition_point(|a| a.position_mm < p)
         .clamp(1, anchors.len() - 1);
@@ -648,9 +665,11 @@ impl Acquisition {
     ) -> Result<Sample, String> {
         analysis.validate(&self.spectrum.wavelength_nm)?;
         let excitation_nm = match c.excitation_method {
-            ExcitationMethod::Calibration => {
-                interpolate_excitation(&plan.excitation_anchors, self.actual_mm)?
-            }
+            ExcitationMethod::Calibration => interpolate_excitation_at_readback(
+                &plan.excitation_anchors,
+                self.actual_mm,
+                c.stage.tolerance_mm,
+            )?,
             ExcitationMethod::SpectrumPeak => excitation_peak(
                 &self.spectrum.wavelength_nm,
                 &self.corrected_counts,
@@ -813,6 +832,79 @@ pub fn display_spectrum(wavelength: &[f64], counts: &[f64], energy: bool) -> Vec
 }
 #[cfg(test)]
 mod tests {
+    fn check_calibration_readback(upper: bool, tolerance_multiple: f64, expected: Option<f64>) {
+        let mut config = Config {
+            excitation_method: ExcitationMethod::Calibration,
+            ..Default::default()
+        };
+        config.excitation_peaks.insert(
+            1,
+            PeakAnchor {
+                position_mm: 18.2,
+                wavelength_nm: 720.,
+            },
+        );
+        let plan = config.plan().unwrap();
+        let tolerance = config.stage.tolerance_mm;
+        let edge = if upper { 19.2 } else { 18. };
+        let actual = edge + tolerance_multiple * tolerance * if upper { 1. } else { -1. };
+        let result =
+            interpolate_excitation_at_readback(&plan.excitation_anchors, actual, tolerance);
+        if let Some(wavelength) = expected {
+            assert!((result.unwrap() - wavelength).abs() < 1e-9);
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                interpolate_excitation(&plan.excitation_anchors, actual).unwrap_err()
+            );
+        }
+    }
+
+    #[test]
+    fn readback_on_lower_calibration_endpoint() {
+        check_calibration_readback(false, 0., Some(700.));
+    }
+
+    #[test]
+    fn readback_extrapolates_below_calibration_within_tolerance() {
+        check_calibration_readback(false, 0.5, Some(699.95));
+    }
+
+    #[test]
+    fn readback_rejects_below_calibration_beyond_tolerance() {
+        check_calibration_readback(false, 2., None);
+    }
+
+    #[test]
+    fn readback_on_upper_calibration_endpoint() {
+        check_calibration_readback(true, 0., Some(760.));
+    }
+
+    #[test]
+    fn readback_extrapolates_above_calibration_within_tolerance() {
+        check_calibration_readback(true, 0.5, Some(760.02));
+    }
+
+    #[test]
+    fn readback_rejects_above_calibration_beyond_tolerance() {
+        check_calibration_readback(true, 2., None);
+    }
+
+    #[test]
+    fn plan_rejects_out_of_range_target_even_within_readback_tolerance() {
+        let mut config = Config {
+            excitation_method: ExcitationMethod::Calibration,
+            ..Default::default()
+        };
+        config.scan.start_mm = 18. - config.stage.tolerance_mm / 2.;
+        assert!(
+            config
+                .plan()
+                .unwrap_err()
+                .contains("lies outside excitation calibration")
+        );
+    }
+
     #[test]
     fn apparatus_defaults_are_saved_without_changing_the_active_port() {
         let mut profile = serde_json::to_value(super::Config::default()).unwrap();
