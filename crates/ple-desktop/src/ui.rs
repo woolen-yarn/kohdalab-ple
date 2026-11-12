@@ -25,6 +25,41 @@ pub(super) struct PendingDialog {
     target: DialogTarget,
     result: Receiver<Result<Option<PathBuf>, String>>,
 }
+/// A saved run that was read and validated off the GUI thread.
+pub(super) struct LoadedRun {
+    config: Config,
+    samples: Vec<Arc<Sample>>,
+    background: Spectrum,
+}
+/// The single in-flight saved-run read. While present, the app is locked.
+pub(super) struct PendingOpen {
+    path: String,
+    result: Receiver<Result<LoadedRun, String>>,
+}
+/// Reads and validates a saved run without touching application state.
+pub(super) fn load_saved_run(path: &std::path::Path) -> Result<LoadedRun, String> {
+    let (config, samples) = recording::load_run(path)?;
+    let bg: Spectrum = serde_json::from_reader(
+        std::fs::File::open(path.join("metadata/background.json")).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    bg.validate()?;
+    if samples.iter().any(|s| {
+        s.spectrum.wavelength_nm.len() != bg.wavelength_nm.len()
+            || s.spectrum
+                .wavelength_nm
+                .iter()
+                .zip(&bg.wavelength_nm)
+                .any(|(a, b)| (a - b).abs() > 1e-7)
+    }) {
+        return Err("Saved spectra do not share the recorded BG wavelength grid".into());
+    }
+    Ok(LoadedRun {
+        config,
+        samples: samples.into_iter().map(Arc::new).collect(),
+        background: bg,
+    })
+}
 impl PleApp {
     fn locked(&self) -> bool {
         self.api_owned()
@@ -35,6 +70,7 @@ impl PleApp {
             || self.spectrometer_configuring
             || self.pending_connections.iter().any(|v| *v)
             || self.dialog.is_some()
+            || self.opening.is_some()
     }
     fn device_action(&mut self, index: usize, connect: bool) {
         if self.locked() {
@@ -80,7 +116,7 @@ impl PleApp {
             result: file_dialog::open(kind, initial),
         });
     }
-    pub(super) fn poll_dialog(&mut self) {
+    pub(super) fn poll_dialog(&mut self, ctx: &egui::Context) {
         let result = self
             .dialog
             .as_ref()
@@ -101,7 +137,7 @@ impl PleApp {
                         DialogTarget::Output => self.config.output_dir = path,
                         DialogTarget::Results => {
                             self.load_path = path;
-                            self.open_results();
+                            self.open_results(ctx);
                         }
                         DialogTarget::Driver => self.config.power.driver_path = path,
                     }
@@ -115,6 +151,10 @@ impl PleApp {
         }
     }
     fn load_profile(&mut self) {
+        if self.opening.is_some() {
+            self.message = Some("Wait for the saved run to open before loading a profile".into());
+            return;
+        }
         if self.connected.iter().any(|v| *v) {
             self.message = Some("Disconnect all devices before loading a profile".into());
             return;
@@ -136,38 +176,80 @@ impl PleApp {
             }
         }
     }
-    fn open_results(&mut self) {
-        if self.busy || self.connected.iter().any(|v| *v) {
+    /// Starts the single in-flight saved-run read. JSON parsing and validation
+    /// run off the GUI thread; only the finished result touches app state.
+    fn open_results(&mut self, ctx: &egui::Context) {
+        self.spawn_open(ctx, load_saved_run);
+    }
+    fn open_blocked(&self) -> bool {
+        self.locked() || self.closing || self.connected.iter().any(|v| *v)
+    }
+    pub(super) fn spawn_open(
+        &mut self,
+        ctx: &egui::Context,
+        load: impl FnOnce(&std::path::Path) -> Result<LoadedRun, String> + Send + 'static,
+    ) {
+        if self.opening.is_some() {
+            self.message = Some("A saved run is already being opened".into());
+            return;
+        }
+        if self.open_blocked() {
             self.message = Some("Disconnect all devices before opening a saved run".into());
             return;
         }
-        match recording::load_run(std::path::Path::new(&self.load_path)).and_then(|(c, samples)| {
-            let path = std::path::Path::new(&self.load_path).join("metadata/background.json");
-            let bg: Spectrum =
-                serde_json::from_reader(std::fs::File::open(path).map_err(|e| e.to_string())?)
-                    .map_err(|e| e.to_string())?;
-            bg.validate()?;
-            if samples.iter().any(|s| {
-                s.spectrum.wavelength_nm.len() != bg.wavelength_nm.len()
-                    || s.spectrum
-                        .wavelength_nm
-                        .iter()
-                        .zip(&bg.wavelength_nm)
-                        .any(|(a, b)| (a - b).abs() > 1e-7)
-            }) {
-                return Err("Saved spectra do not share the recorded BG wavelength grid".into());
+        let path = self.load_path.clone();
+        let worker_path = PathBuf::from(&path);
+        let (sender, result) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        let spawned = std::thread::Builder::new()
+            .name("ple-open-run".into())
+            .spawn(move || {
+                let _ = sender.send(load(&worker_path));
+                ctx.request_repaint();
+            });
+        if let Err(e) = spawned {
+            let e = format!("Could not start saved-run reader: {e}");
+            self.log(&e);
+            self.message = Some(e);
+            return;
+        }
+        self.opening = Some(PendingOpen { path, result });
+        self.message = None;
+        self.log("Opening saved run; no hardware actions");
+    }
+    /// Applies a finished read on the GUI thread; failure keeps the current run.
+    pub(super) fn poll_open(&mut self) {
+        let Some(pending) = &self.opening else {
+            return;
+        };
+        let result = match pending.result.try_recv() {
+            Ok(r) => r,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => Err("Saved-run reader stopped unexpectedly".into()),
+        };
+        let pending = self.opening.take().expect("checked above");
+        // Defence in depth: the open lock keeps these unreachable from the GUI and API.
+        let result = result.and_then(|run| {
+            if self.open_blocked() {
+                Err("Saved run was not opened because a device operation started".into())
+            } else {
+                Ok(run)
             }
-            Ok((c, samples, bg))
-        }) {
-            Ok((c, samples, bg)) => {
+        });
+        match result {
+            Ok(LoadedRun {
+                config: c,
+                samples,
+                background: bg,
+            }) => {
                 self.background = Some(bg);
                 self.first_saved = None;
                 self.last_saved = None;
                 self.analysis_draft = c.initial_analysis();
                 self.preview = None;
                 self.config = c;
-                self.samples = samples.into_iter().map(Arc::new).collect();
-                self.run_dir = self.load_path.clone();
+                self.samples = samples;
+                self.run_dir = pending.path;
                 self.run_count = self
                     .config
                     .plan()
@@ -1033,7 +1115,14 @@ impl PleApp {
                 }
                 .into(),
             ),
-            ("phase", self.state.clone()),
+            (
+                "phase",
+                if self.opening.is_some() {
+                    "Opening saved run…".into()
+                } else {
+                    self.state.clone()
+                },
+            ),
             ("spectrometer", self.connected[0].to_string()),
             ("conex_cc", self.connected[1].to_string()),
             ("power_meter", self.connected[2].to_string()),
@@ -1914,5 +2003,204 @@ mod tests {
         click(&mut app, &ctx, "run_stop");
         assert!(app.state.starts_with("Stop requested"));
         assert_eq!(app.config.scan.start_mm, 18.);
+    }
+
+    /// Writes a small synthetic saved run (BG + two acquisitions) to a temp dir.
+    fn synthetic_run(root: &std::path::Path) -> String {
+        let config = Config {
+            output_dir: root.to_string_lossy().into(),
+            sample: "synthetic".into(),
+            ..Default::default()
+        };
+        let mut recording = recording::Recording::create(&config, &config.plan().unwrap()).unwrap();
+        let bg = Spectrum {
+            wavelength_nm: vec![750., 800.],
+            counts: vec![4., 5.],
+            spe_path: None,
+            settings: serde_json::Value::Null,
+        };
+        recording.background(&bg).unwrap();
+        for point_index in 0..2 {
+            let sample = Sample {
+                file_base: String::new(),
+                point_index,
+                repeat_index: 0,
+                target_mm: 18.,
+                actual_mm: 18.,
+                excitation_nm: 700.,
+                excitation_source: "calibration".into(),
+                power_w: 1e-6,
+                sample_power_w: 1e-6,
+                power_timestamp_unix_s: 1.,
+                power_sensor_wavelength_nm: Some(800.),
+                power_observation: serde_json::json!({"power_W": 1e-6}),
+                acquisition_started_unix_s: 2.,
+                timestamp_unix_s: 3.,
+                pl_peak_nm: Some(800.),
+                pl_integral_counts_nm: 100.,
+                spectrum: Spectrum {
+                    counts: vec![3., 10.],
+                    ..bg.clone()
+                },
+                corrected_counts: vec![-1., 5.],
+            };
+            recording.sample(&sample, &bg).unwrap();
+        }
+        recording.directory.to_string_lossy().into_owned()
+    }
+    /// Loader that cannot finish until the test releases the gate, so a
+    /// returning `spawn_open` proves the GUI thread did not wait for the read.
+    fn gated_loader(
+        gate: std::sync::mpsc::Receiver<()>,
+    ) -> impl FnOnce(&std::path::Path) -> Result<LoadedRun, String> + Send + 'static {
+        move |path: &std::path::Path| {
+            gate.recv().map_err(|_| "gate dropped".to_string())?;
+            load_saved_run(path)
+        }
+    }
+    /// Polls until the worker result is applied. The deadline only guards a
+    /// hung worker; correctness never depends on how long the read takes.
+    fn finish_open(app: &mut PleApp) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while app.opening.is_some() {
+            assert!(Instant::now() < deadline, "saved-run reader did not finish");
+            app.poll_open();
+            std::thread::yield_now();
+        }
+    }
+    fn previous_results(app: &mut PleApp) -> Arc<Sample> {
+        let directory = tempfile::tempdir().unwrap();
+        let path = synthetic_run(directory.path());
+        let previous = load_saved_run(std::path::Path::new(&path)).unwrap();
+        let sample = previous.samples[0].clone();
+        app.samples = vec![sample.clone()];
+        app.run_dir = "previous-run".into();
+        app.state = "Recorded results".into();
+        sample
+    }
+
+    #[test]
+    fn saved_run_loader_validates_synthetic_run_and_background() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = synthetic_run(directory.path());
+        let run = load_saved_run(std::path::Path::new(&path)).unwrap();
+        assert_eq!(run.samples.len(), 2);
+        assert_eq!(run.background.wavelength_nm, vec![750., 800.]);
+
+        let bg_path = std::path::Path::new(&path).join("metadata/background.json");
+        let mut bg: Spectrum = serde_json::from_slice(&std::fs::read(&bg_path).unwrap()).unwrap();
+        bg.wavelength_nm = vec![750., 801.];
+        std::fs::write(&bg_path, serde_json::to_vec(&bg).unwrap()).unwrap();
+        let error = load_saved_run(std::path::Path::new(&path)).err().unwrap();
+        assert!(error.contains("BG wavelength grid"), "{error}");
+        std::fs::remove_file(&bg_path).unwrap();
+        assert!(load_saved_run(std::path::Path::new(&path)).is_err());
+    }
+
+    #[test]
+    fn open_results_does_not_block_and_locks_until_applied() {
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let directory = tempfile::tempdir().unwrap();
+        app.load_path = synthetic_run(directory.path());
+        let profile_before = serde_json::to_value(&app.config).unwrap();
+        let phase_before = app.state.clone();
+        let plot_epoch = app.plot_epoch;
+        let (release, gate) = std::sync::mpsc::channel();
+
+        app.spawn_open(&ctx, gated_loader(gate));
+        // The read is still blocked on the gate, so returning here means the
+        // GUI thread did not perform it.
+        assert!(app.opening.is_some());
+        assert!(app.locked());
+        assert_eq!(app.state, phase_before);
+        app.poll_open();
+        assert!(app.opening.is_some());
+        frame(&mut app, &ctx, vec![]);
+
+        // Duplicate open, connect, start and profile load are all refused.
+        app.spawn_open(&ctx, |_| Err("second reader must not start".into()));
+        assert!(
+            app.message
+                .as_deref()
+                .unwrap()
+                .contains("already being opened")
+        );
+        app.device_action(0, true);
+        app.all_devices(true);
+        assert!(app.pending_connections.iter().all(|p| !p));
+        app.start();
+        assert!(!app.busy);
+        app.load_profile();
+        assert_eq!(serde_json::to_value(&app.config).unwrap(), profile_before);
+        click(&mut app, &ctx, "run_open");
+        assert!(app.dialog.is_none());
+
+        release.send(()).unwrap();
+        finish_open(&mut app);
+        assert!(!app.locked());
+        assert_eq!(app.state, "Recorded results");
+        assert_eq!(app.run_dir, app.load_path);
+        assert_eq!(app.samples.len(), 2);
+        assert!(app.background.is_some());
+        assert!(app.message.is_none(), "{:?}", app.message);
+        assert_eq!(app.plot_epoch, plot_epoch.wrapping_add(1));
+    }
+
+    #[test]
+    fn failed_or_crashed_open_keeps_existing_results() {
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let previous = previous_results(&mut app);
+        let epoch = app.plot_epoch;
+
+        let missing = tempfile::tempdir().unwrap();
+        app.load_path = missing.path().join("not-a-run").to_string_lossy().into();
+        app.spawn_open(&ctx, load_saved_run);
+        finish_open(&mut app);
+        assert!(app.message.is_some());
+
+        let panic_loader =
+            |_: &std::path::Path| -> Result<LoadedRun, String> { panic!("simulated reader crash") };
+        app.spawn_open(&ctx, panic_loader);
+        finish_open(&mut app);
+        assert_eq!(
+            app.message.as_deref(),
+            Some("Saved-run reader stopped unexpectedly")
+        );
+
+        assert_eq!(app.samples.len(), 1);
+        assert!(Arc::ptr_eq(&app.samples[0], &previous));
+        assert_eq!(app.run_dir, "previous-run");
+        assert_eq!(app.state, "Recorded results");
+        assert_eq!(app.plot_epoch, epoch);
+        assert!(!app.locked());
+    }
+
+    #[test]
+    fn open_is_refused_with_devices_and_result_is_dropped_during_cleanup() {
+        let ctx = egui::Context::default();
+        let mut app = PleApp::with_context(&ctx, Launch::default());
+        let directory = tempfile::tempdir().unwrap();
+        app.load_path = synthetic_run(directory.path());
+        app.connected[1] = true;
+        app.spawn_open(&ctx, |_| Err("must not start while connected".into()));
+        assert!(app.opening.is_none());
+        assert!(app.message.as_deref().unwrap().contains("Disconnect"));
+        app.connected[1] = false;
+
+        let previous = previous_results(&mut app);
+        let (release, gate) = std::sync::mpsc::channel();
+        app.spawn_open(&ctx, gated_loader(gate));
+        // The authenticated Stop endpoint is available without a lease.
+        // A pending cleanup must win over a completed file read.
+        app.api_cleanup = true;
+        app.state = "Stop pending".into();
+        release.send(()).unwrap();
+        finish_open(&mut app);
+        assert!(Arc::ptr_eq(&app.samples[0], &previous));
+        assert_eq!(app.run_dir, "previous-run");
+        assert!(app.message.as_deref().unwrap().contains("device operation"));
+        assert_eq!(app.state, "Stop pending");
     }
 }
