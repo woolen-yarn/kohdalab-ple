@@ -2,6 +2,12 @@
 
 ## Unreleased / 未リリース
 
+## 0.3.14 — Preview
+
+- Load and validate saved runs in the background so Open Results can keep drawing during file reads. Keep the displayed run on failure and defer to device cleanup when applying results. / Open Resultsで保存済みrunをバックグラウンドで読み込み・照合し、読込中も画面を描画します。読込に失敗しても表示中のrunを保持し、機器の停止後処理を結果の反映より優先します。
+
+[PR #23](https://github.com/woolen-yarn/kohdalab-ple/pull/23)
+
 ## 0.3.13 — Preview
 
 - Require a shared token for the CONEX reference adapter to listen outside IPv4 loopback. Advertise the existing lease-free Stop behavior for authenticated PLE GUI API clients and document Windows descriptor permissions. / CONEX参照アダプターがIPv4ループバック外で待ち受ける場合は共有トークンを必須にします。認証済みPLE GUI APIクライアントがleaseなしでStopできる既存動作を能力宣言に反映し、Windowsの接続情報ファイルのアクセス権を明記します。
