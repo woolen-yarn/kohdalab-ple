@@ -60,6 +60,7 @@ impl PleApp {
             || self.pending_connections.iter().any(|p| *p)
             || self.spectrometer_configuring
             || self.dialog.is_some()
+            || self.opening.is_some()
             || self.closing
             || self.api_cleanup
     }
@@ -835,6 +836,38 @@ mod tests {
                 .unwrap()
                 .to_owned();
         (app, ctx, dir, lease)
+    }
+    #[test]
+    fn opening_saved_run_blocks_control_acquisition_until_finished() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = egui::Context::default();
+        let launch = Launch {
+            api_server: Some(crate::remote_gui::Server::start(dir.path().join("api")).unwrap()),
+            ..Default::default()
+        };
+        let mut app = PleApp::with_context(&ctx, launch);
+        let (release, gate) = std::sync::mpsc::channel::<()>();
+        app.spawn_open(&ctx, move |_| {
+            let _ = gate.recv();
+            Err("synthetic unreadable run".into())
+        });
+        assert!(app.opening.is_some());
+        let client = crate::remote_gui::new_id().unwrap();
+        let acquire = json!({"action":"acquire","client_id":client});
+        assert_eq!(call(&mut app, acquire.clone()).unwrap_err().code, "busy");
+        let common = json!({"action":"acquire","_control_method":"acquire","client_id":client});
+        assert_eq!(call(&mut app, common).unwrap_err().code, "busy");
+        let status = call(&mut app, json!({"action":"status"})).unwrap();
+        assert_eq!(status["operation_busy"], true);
+
+        release.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while app.opening.is_some() {
+            assert!(Instant::now() < deadline, "saved-run reader did not finish");
+            app.poll_open();
+            std::thread::yield_now();
+        }
+        assert!(call(&mut app, acquire).unwrap()["lease"].is_string());
     }
     #[test]
     fn configure_accepts_saved_ple_profile_and_rejects_foreign_identity() {

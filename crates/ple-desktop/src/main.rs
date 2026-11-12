@@ -109,6 +109,7 @@ struct PleApp {
     pending_connections: [bool; 3],
     advanced: Option<ui::Advanced>,
     dialog: Option<ui::PendingDialog>,
+    opening: Option<ui::PendingOpen>,
     plot_epoch: u64,
     finished_elapsed: Option<f64>,
     run_count: usize,
@@ -207,6 +208,7 @@ impl PleApp {
             pending_connections: [false; 3],
             advanced: None,
             dialog: None,
+            opening: None,
             plot_epoch: 0,
             finished_elapsed: None,
             run_count: 0,
@@ -261,6 +263,10 @@ impl PleApp {
         self.controller.stop();
     }
     fn start_for(&mut self, external_id: Option<String>) {
+        if self.opening.is_some() {
+            self.message = Some("Wait for the saved run to open before starting".into());
+            return;
+        }
         if let Some(reason) = self.recovery_reason() {
             self.message = Some(format!("Confirm device recovery before starting: {reason}"));
             return;
@@ -640,7 +646,8 @@ impl eframe::App for PleApp {
             self.auto_started = true;
             self.start();
         }
-        self.poll_dialog();
+        self.poll_dialog(ctx);
+        self.poll_open();
         ctx.request_repaint_after(Duration::from_millis(
             if self.connected.iter().any(|x| *x) || self.busy {
                 16
