@@ -13,3 +13,7 @@ The fixed URL becomes available after the first Distribute publication. Windows 
 This job sends its distribution directly to Releases. Existing workflows may retain their own review artifacts. The application version stays in the package and the distribution number is recorded in BUILD-INFO.json.
 
 配布ファイルは同じジョブからReleasesへ添付します。既存のテストや正式版作成ワークフローの成果物は、それぞれの保持期間に従います。アプリ内の版番号と配布番号の対応はBUILD-INFO.jsonで確認できます。
+
+Build-numbered distributions update GitHub’s latest release. They record CI validation only and do not establish new hardware acceptance. README stable-version downloads remain pinned to the qualified version; the one-click distribution ZIP is the separate latest-build download.
+
+配布番号付きの版はGitHubのlatestを更新します。実機検証済みとは扱いません。READMEの安定版ダウンロードは検証済みの版に固定し、最新ビルドのZIPはこのページの固定リンクで案内します。
