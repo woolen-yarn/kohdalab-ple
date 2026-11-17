@@ -143,3 +143,5 @@ macOS: `/Applications/KohdaLab PLE.app`. See [installation](docs/guides/install.
 [Control Protocol 1 and Python/Notebook examples / 共通APIとPython・Notebook](docs/reference/common-control-api.md). The existing application API remains supported; operation payloads and safety policy are app-specific. Camera is read-only. / 既存APIは維持し、操作引数と安全方針は各アプリに従います。Cameraは読み取り専用です。
 
 See [Measurement output bundles / 測定データの保存セット](docs/reference/measurement-output.md) for common file roles and unit conventions.
+
+[One-click distribution / ワンクリック配布](DISTRIBUTION.md)
