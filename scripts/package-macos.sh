@@ -11,6 +11,7 @@ trap 'rm -rf "$ple_stage"' EXIT
 ple_dest="dist/KohdaLab PLE.app"
 ple_app="$ple_stage/KohdaLab PLE.app"
 mkdir -p "$ple_app/Contents/MacOS" "$ple_app/Contents/Resources/bridge" "$ple_app/Contents/Resources/examples" "$ple_app/Contents/Resources/scripts"
+cp packaging/icons/kohdalab-ple.icns "$ple_app/Contents/Resources/"
 cp target/release/kohdalab-ple "$ple_app/Contents/MacOS/kohdalab-ple"
 cp bridge/conex_server.py bridge/ple_bridge.py bridge/sdk_check.py bridge/requirements.txt bridge/README.md "$ple_app/Contents/Resources/bridge/"
 cp scripts/verify_run.py scripts/verify_gui_api.py scripts/collect_licenses.py "$ple_app/Contents/Resources/scripts/"
@@ -36,6 +37,7 @@ info = {
     'CFBundleExecutable': 'kohdalab-ple',
     'CFBundleIdentifier': 'org.kohdalab.ple',
     'CFBundleName': 'KohdaLab PLE',
+    'CFBundleIconFile': 'kohdalab-ple.icns',
     'CFBundlePackageType': 'APPL',
     'CFBundleShortVersionString': numeric_version,
     'CFBundleVersion': numeric_version,
