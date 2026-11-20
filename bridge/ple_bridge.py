@@ -676,7 +676,7 @@ class ThorlabsMffShutter:
 
 
 class LegacyThorlabsPowerMeter:
-    """Adapter for the laboratory's existing ThorlabsPowerMeter.py, supplied externally."""
+    """Power adapter for the existing helper or an explicitly selected native TLPMX SDK."""
     def __init__(self) -> None:
         self.meter = None
         self.resource: str | None = None
@@ -694,7 +694,7 @@ class LegacyThorlabsPowerMeter:
             "model": self._optional_text(getattr(meter, "modelName", None)),
             "serial_number": self._optional_text(getattr(meter, "serialNumber", None)),
             "manufacturer": self._optional_text(getattr(meter, "manufacturer", None)),
-            "driver_version": self._optional_text(getattr(type(meter), "driverVersion", None)),
+            "driver_version": self._optional_text(getattr(meter, "driverVersion", None)),
             "wavelength_range_nm": {"min": None, "max": None},
             "sensor": {"available": False}, "errors": [],
         }
@@ -792,7 +792,7 @@ class LegacyThorlabsPowerMeter:
         driver_path = args.get("driver_path")
         resource = args.get("resource")
         if not isinstance(driver_path, str) or not Path(driver_path).is_dir():
-            raise BridgeError("driver_path must be the folder containing ThorlabsPowerMeter.py and its official DLL")
+            raise BridgeError("driver_path must be a folder containing ThorlabsPowerMeter.py or TLPMX_64.dll")
         if not isinstance(resource, str) or not resource:
             raise BridgeError("resource must be a VISA resource name")
         wavelength = _finite("wavelength_nm", args.get("wavelength_nm"), True)
@@ -800,25 +800,27 @@ class LegacyThorlabsPowerMeter:
         average = _finite("average_s", args.get("average_s", 0.5), True)
         module_file = Path(driver_path) / "ThorlabsPowerMeter.py"
         dll_dir = Path(driver_path) / "Thorlabs_DotNet_dll"
-        if not module_file.is_file():
-            raise BridgeError(f"no ThorlabsPowerMeter.py at {module_file}")
-        if not dll_dir.is_dir():
-            raise BridgeError(f"no Thorlabs_DotNet_dll folder at {dll_dir}")
-        spec = importlib.util.spec_from_file_location("kohdalab_thorlabs_power", module_file)
-        if spec is None or spec.loader is None:
-            raise BridgeError("could not load ThorlabsPowerMeter.py")
-        module = importlib.util.module_from_spec(spec)
+        native_dll = Path(driver_path) / "TLPMX_64.dll"
+        if not module_file.is_file() and not native_dll.is_file():
+            raise BridgeError(f"no ThorlabsPowerMeter.py or TLPMX_64.dll at {driver_path}")
         meter = None
         try:
             with redirect_stdout(sys.stderr):
-                spec.loader.exec_module(module)
-                # The legacy helper's listDevices() incorrectly uses extend on
-                # a string.  Add the DLL directory correctly first, then pass
-                # it for its version lookup and AddReference resolution.
-                if str(dll_dir) not in sys.path:
-                    sys.path.append(str(dll_dir))
-                devices = module.ThorlabsPowerMeter.listDevices(str(dll_dir))
-                meter = devices.connect(resource)
+                if module_file.is_file():
+                    if not dll_dir.is_dir():
+                        raise BridgeError(f"no Thorlabs_DotNet_dll folder at {dll_dir}")
+                    spec = importlib.util.spec_from_file_location("kohdalab_thorlabs_power", module_file)
+                    if spec is None or spec.loader is None:
+                        raise BridgeError("could not load ThorlabsPowerMeter.py")
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    if str(dll_dir) not in sys.path:
+                        sys.path.append(str(dll_dir))
+                    devices = module.ThorlabsPowerMeter.listDevices(str(dll_dir))
+                    meter = devices.connect(resource)
+                else:
+                    from tlpmx import TLPMXMeter
+                    meter = TLPMXMeter(native_dll, resource)
                 if meter is None:
                     raise BridgeError(f"could not connect power meter {resource}")
                 actual_wavelength = self._set_meter_wavelength(meter, wavelength, tolerance)

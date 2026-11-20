@@ -2,6 +2,8 @@
 
 ## Unreleased / 未リリース
 
+- Support an explicitly configured native TLPMX 64-bit SDK directory for power-meter connection, wavelength/averaging readback, sensor identity and native-unit power recording. / パワーメーターに明示指定したTLPMX 64-bit SDKで接続し、波長・平均時間の読戻し、センサー情報とネイティブ単位の電力記録に対応します。
+
 ## 0.3.14 — Preview
 
 - Load and validate saved runs in the background so Open Results can keep drawing during file reads. Keep the displayed run on failure and defer to device cleanup when applying results. / Open Resultsで保存済みrunをバックグラウンドで読み込み・照合し、読込中も画面を描画します。読込に失敗しても表示中のrunを保持し、機器の停止後処理を結果の反映より優先します。
