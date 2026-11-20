@@ -231,6 +231,39 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.LegacyThorlabsPowerMeter._set_meter_average(Meter(),.5),.5)
         with self.assertRaisesRegex(bridge.BridgeError,"averaging readback"):bridge.LegacyThorlabsPowerMeter._set_meter_average(Meter(),.2)
 
+    def test_lightfield_vendor_paths_preserve_drive_unc_and_decimal_names(self):
+        from pathlib import PureWindowsPath
+        cases = [
+            (r"\\?\C:\runs\Y_18.7200mm.spe", r"C:\runs\Y_18.7200mm.spe"),
+            (r"\\?\UNC\server\share\run\background.spe", r"\\server\share\run\background.spe"),
+            (r"C:\runs\background.spe", r"C:\runs\background.spe"),
+        ]
+        for original, expected in cases:
+            with self.subTest(original=original):
+                self.assertEqual(bridge._lightfield_path(PureWindowsPath(original)), expected)
+        # Do not silently reinterpret other Windows device namespaces.
+        self.assertEqual(bridge._lightfield_path(PureWindowsPath(r"\\?\Volume{abc}\run")),
+                         r"\\?\Volume{abc}\run")
+
+    def test_lightfield_lock_probe_uses_vendor_supported_path(self):
+        from pathlib import PureWindowsPath
+        from types import SimpleNamespace
+        paths = []
+        closed = []
+        def open_file(path, *_):
+            if path.startswith("\\\\?\\"):
+                raise ValueError("unsupported vendor path")
+            paths.append(path)
+            return SimpleNamespace(Dispose=lambda: closed.append(path))
+        spec = bridge.LightFieldSpectrometer()
+        spec.api = {"File": SimpleNamespace(Open=open_file),
+                    "FileMode": SimpleNamespace(Open=1),
+                    "FileAccess": SimpleNamespace(Read=1),
+                    "FileShare": SimpleNamespace(**{"None":0})}
+        self.assertTrue(spec._exclusively_readable([PureWindowsPath(r"\\?\C:\runs\background.spe")]))
+        self.assertEqual(paths, [r"C:\runs\background.spe"])
+        self.assertEqual(closed, paths)
+
     def test_lightfield_stop_requires_ready_readback(self):
         class Experiment:
             IsReadyToRun=False

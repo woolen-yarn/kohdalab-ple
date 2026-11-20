@@ -56,6 +56,21 @@ def _output_paths(path_base: Path) -> tuple[Path, Path, Path]:
             path_base.with_name(path_base.name + ".lightfield.csv"))
 
 
+def _lightfield_path(path: Path) -> str:
+    """Keep the same Windows file while using LightField's supported DOS/UNC syntax.
+
+    Rust canonicalize supplies verbatim paths; AutomationV5 rejects them as
+    invalid output directories. Python file checks retain the original path.
+    """
+    value = str(path)
+    if value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + value[8:]
+    if (value.startswith("\\\\?\\") and len(value) >= 7
+            and value[4].isascii() and value[4].isalpha() and value[5:7] == ":\\"):
+        return value[4:]
+    return value
+
+
 def _wait_stable(
     paths: list[Path], deadline: float, cancel: threading.Event,
     exclusively_readable: Callable[[list[Path]], bool] | None = None,
@@ -386,7 +401,7 @@ class LightFieldSpectrometer:
         try:
             for path in paths:
                 handles.append(file_type.Open(
-                    str(path), self.api["FileMode"].Open, self.api["FileAccess"].Read,
+                    _lightfield_path(path), self.api["FileMode"].Open, self.api["FileAccess"].Read,
                     getattr(self.api["FileShare"], "None"),
                 ))
             return True
@@ -507,7 +522,7 @@ class LightFieldSpectrometer:
         if spe.exists() or native_csv.exists() or csv_path.exists():
             raise BridgeError("refusing to overwrite existing .spe, temporary LightField CSV, or .lightfield.csv output")
         a = self.api
-        self._set(a["ExperimentSettings"].FileNameGenerationDirectory, str(path_base.parent))
+        self._set(a["ExperimentSettings"].FileNameGenerationDirectory, _lightfield_path(path_base.parent))
         self._set(a["ExperimentSettings"].FileNameGenerationBaseFileName, path_base.name)
         self._set(a["ExperimentSettings"].FileNameGenerationAttachIncrement, False)
         self._set(a["ExperimentSettings"].FileNameGenerationAttachDate, False)
@@ -529,7 +544,7 @@ class LightFieldSpectrometer:
                 raise BridgeError("LightField acquisition did not complete before timeout")
             _wait_stable([spe], deadline, cancel, self._exclusively_readable)
             export = self.file_manager.CreateExportSettings(a["ExportFileType"].Csv)
-            export_task = self.file_manager.ExportAsync(export, str(spe))
+            export_task = self.file_manager.ExportAsync(export, _lightfield_path(spe))
             _wait_export_task(export_task, deadline, cancel)
             _wait_stable([spe, native_csv], deadline, cancel, self._exclusively_readable)
             os.replace(native_csv, csv_path)
