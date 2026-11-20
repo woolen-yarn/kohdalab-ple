@@ -105,9 +105,9 @@ def _read_one_roi_csv(path: Path) -> tuple[list[float], list[float]]:
     # R/F/Y/X are ROI, frame, row and pixel metadata in standard LightField
     # exports. They are never the calibrated spectral columns.
     x_key = next((original for normalized, original in fields.items()
-                  if normalized == "wavelength_nm" or normalized.startswith("wavelength")), None)
+                  if normalized in {"w", "wavelength_nm"} or normalized.startswith("wavelength")), None)
     y_key = next((original for normalized, original in fields.items()
-                  if normalized == "counts" or normalized.startswith("intensity")), None)
+                  if normalized in {"i", "counts"} or normalized.startswith("intensity")), None)
     if (x_key is None or y_key is None) and set(fields) == {"x", "y"}:
         x_key, y_key = fields["x"], fields["y"]
     if not x_key or not y_key:

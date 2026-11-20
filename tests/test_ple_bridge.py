@@ -330,6 +330,15 @@ class BridgeTests(unittest.TestCase):
             p.write_text("R,F,Y,X,Wavelength (nm),Intensity\n0,0,10,100,700.0,3\n0,0,10,101,701.0,4\n")
             self.assertEqual(bridge._read_one_roi_csv(p), ([700.0, 701.0], [3.0, 4.0]))
 
+    def test_csv_reads_lightfield_w_i_columns_with_detector_metadata(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lightfield.csv"
+            path.write_text("R,F,W,Y,X,I\n1,1,788.4312,0,0,596.0000\n1,1,788.4718,0,1,577.0000\n")
+            self.assertEqual(
+                bridge._read_one_roi_csv(path),
+                ([788.4312, 788.4718], [596.0, 577.0]),
+            )
+
     def test_csv_rejects_uncalibrated_metadata_only_export(self):
         with TemporaryDirectory() as tmp:
             p = Path(tmp) / "metadata.csv"; p.write_text("R,F,Y,X\n0,0,1,700\n0,0,2,701\n")
