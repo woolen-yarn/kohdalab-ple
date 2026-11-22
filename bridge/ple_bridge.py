@@ -918,12 +918,11 @@ class LegacyThorlabsPowerMeter:
 
     def disconnect(self) -> None:
         if self.meter is not None:
-            try:
-                with redirect_stdout(sys.stderr):
-                    self.meter.disconnect()
-            finally:
-                self.meter, self.resource, self.wavelength_nm = None, None, None
-                self.hardware = {"available": False, "errors": ["power meter is not connected"]}
+            with redirect_stdout(sys.stderr):
+                self.meter.disconnect()
+            # Keep ownership and identity when close fails so cleanup can retry.
+            self.meter, self.resource, self.wavelength_nm = None, None, None
+            self.hardware = {"available": False, "errors": ["power meter is not connected"]}
 
     def state(self) -> dict[str, Any]:
         return {"connected": self.meter is not None, "resource": self.resource,

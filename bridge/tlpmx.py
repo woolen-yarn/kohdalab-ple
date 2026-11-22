@@ -60,8 +60,11 @@ class TLPMXMeter:
             driver, firmware = self._buffers(2)
             self._invoke("revisionQuery", self._session, driver, firmware)
             self.driverVersion = self._text(driver)
-        except Exception:
-            self.disconnect()
+        except Exception as error:
+            try:
+                self.disconnect()
+            except Exception as cleanup:
+                raise RuntimeError(f"{error}; TLPMX cleanup also failed: {cleanup}") from error
             raise
 
     @staticmethod

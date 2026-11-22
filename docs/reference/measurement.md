@@ -66,7 +66,7 @@ LightFieldのベンダーBG補正は無効にし読戻します。取得結果�
 
 Stopの受付と停止完了を区別します。ブリッジの `ensure_idle` はLightFieldの `IsReadyToRun` と自動MFF遮光を確認します。kohdalab-shutterはRust側で独立してCloseと整定状態を待ち、結果を停止・復旧判定に含めます。未確認の停止はエラーとして保持し、次の測定を開始しません。
 
-## v0.2.1の異常復帰と終了
+## 異常復帰と終了
 
 SDK失敗・応答期限切れは、失敗通知だけで終えずStopと待機状態を確認します。未確認の場合は復帰画面を表示し、次のStart・Move・Applyを拒否します。失敗した接続の制御ハンドルも保持し、停止待ちを再接続で消しません。終了時にはStopだけでなくSDKのshutdown・Disposeを要求します。
 

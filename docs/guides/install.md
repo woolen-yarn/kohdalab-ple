@@ -4,9 +4,9 @@
 
 ## Application / アプリ
 
-Choose the current Preview from the [Downloads table](../../README.md#downloads--ダウンロード) and check its SHA-256. On Windows x64, run Setup.exe with administrator privileges, then open **KohdaLab → PLE → KohdaLab PLE** from the Start menu. For the portable ZIP, extract all files and launch `kohdalab-ple.exe`. The Apple-silicon app is for Demo and reviewing saved results. Packaged applications need no Rust. Demo needs no Python or instruments. Hardware acquisition requires Windows, 64-bit Python and the manufacturer software listed below.
+Choose the current release from the [Downloads table](../../README.md#downloads--ダウンロード) and check its SHA-256. On Windows x64, run Setup.exe with administrator privileges, then open **KohdaLab → PLE → KohdaLab PLE** from the Start menu. For the portable ZIP, extract all files and launch `kohdalab-ple.exe`. The Apple-silicon app is for Demo and reviewing saved results. Packaged applications need no Rust. Demo needs no Python or instruments. Hardware acquisition requires Windows, 64-bit Python and the manufacturer software listed below.
 
-[ダウンロード表](../../README.md#downloads--ダウンロード)から現行のPreviewを選び、SHA-256を照合します。Windows x64では管理者権限でSetup.exeを実行し、スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple silicon版はDemo・結果確認用です。配布版にRustは不要で、DemoはPython・機器不要です。実機取得にはWindows・64-bit Python・以下のメーカーソフトが必要です。
+[ダウンロード表](../../README.md#downloads--ダウンロード)から現行版を選び、SHA-256を照合します。Windows x64では管理者権限でSetup.exeを実行し、スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple silicon版はDemo・結果確認用です。配布版にRustは不要で、DemoはPython・機器不要です。実機取得にはWindows・64-bit Python・以下のメーカーソフトが必要です。
 
 ## Application locations
 

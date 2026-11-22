@@ -141,6 +141,24 @@ class TLPMXTests(unittest.TestCase):
         meter.disconnect()
         self.assertEqual(meter._session.value, 0)
 
+    def test_bridge_close_failure_keeps_meter_identity_for_retry(self):
+        power = self.connect()
+        original = power.meter
+        self.sdk.errors["close"] = -45
+        with self.assertRaisesRegex(RuntimeError, "SDK status -45"):
+            power.disconnect()
+        self.assertIs(power.meter, original)
+        self.assertEqual(power.state()["resource"], "USB::meter-1")
+        self.sdk.errors.clear()
+        power.disconnect()
+        self.assertIsNone(power.meter)
+        self.assertFalse(power.state()["connected"])
+
+    def test_initialization_and_cleanup_errors_are_both_reported(self):
+        self.sdk.errors.update(identificationQuery=-43, close=-45)
+        with self.assertRaisesRegex(bridge.BridgeError, r"identificationQuery.*-43.*cleanup.*close.*-45"):
+            self.connect()
+
     def test_partial_native_initialization_is_cleaned_up(self):
         self.sdk.errors["identificationQuery"] = -43
         with self.assertRaisesRegex(bridge.BridgeError, "SDK status -43"):

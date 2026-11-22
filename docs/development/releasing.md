@@ -33,7 +33,7 @@ stageが既にある場合は`--no-build`、必要なら`--portable-dir`・`--ma
 
 - `test.yml`: source checks, Rust tests/lints, device-free Python tests, build and Windows profile CLI check. / ソース検査、Rust、実機なしPython、ビルド、Windows設定CLI確認。
 - `docs.yml`: local Markdown/HTML link validation. / ローカル文書リンクの検証。
-- `release.yml`: manual artifact builds or `v*` tags. A tag must exactly match the Cargo version. Only tag builds publish a GitHub prerelease after verification and both platform packages succeed. / 手動の成果物作成または`v*`タグ。タグはCargo版と完全一致させ、検証と両OSの梱包成功後、タグ実行だけがGitHub prereleaseを作成します。
+- `release.yml`: manual artifact builds or `v*` tags. A tag must exactly match the Cargo version. Only tag builds create a draft release after verification and both platform packages succeed. The maintainer verifies asset checksums and the tagged source before publishing it as a stable release. / 手動の成果物作成または`v*`タグ。タグはCargo版と完全一致させ、検証と両OSの梱包成功後、タグ実行でReleaseの下書きを作ります。保守者が配布物のハッシュとタグのソースを照合してから正式公開します。
 
 `workflow_dispatch` creates downloadable workflow artifacts without publishing a release. Publishing a tag is a deliberate maintainer action; it does not change repository visibility. Hardware validation remains a separate recorded step. / 手動実行は公開リリースを作らずworkflow artifactを出力します。タグ送信は保守者が明示的に行い、リポジトリの公開範囲は変えません。実機確認は別途記録します。
 
