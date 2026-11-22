@@ -16,7 +16,7 @@
 
 ## インストールとパッケージ確認
 
-1. 取得PCでPreviewのSetup.exeをインストールするか、portable ZIPを全体展開します。SHA-256を照合し、配布版の版と起動したexeの場所を記録します。`kohdalab-ple.exe`、`bridge/sdk_check.py`、`bridge/ple_bridge.py`、`scripts/preflight.ps1`、`scripts/verify_run.py`、本書、第三者ライセンス一式があることを確認します。
+1. 取得PCで現行版のSetup.exeをインストールするか、portable ZIPを全体展開します。SHA-256を照合し、配布版の版と起動したexeの場所を記録します。`kohdalab-ple.exe`、`bridge/sdk_check.py`、`bridge/ple_bridge.py`、`scripts/preflight.ps1`、`scripts/verify_run.py`、本書、第三者ライセンス一式があることを確認します。
 2. 対応する 64-bit Windows で、`windows-imports.txt` に示される UCRT 要件を満たします。LightField Automation、CONEX SDK、Thorlabs helper/DLL はそれぞれ正規のベンダーインストーラーで導入します。PLE パッケージからベンダー DLL をコピー・再配布しません。
 3. レビュー済みの 64-bit Python と bridge 依存パッケージを入れます。
 

@@ -163,11 +163,11 @@ jobs:
         run: |
           version=$(python -c "import pathlib,tomllib; print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])")
           python scripts/release_metadata.py --require-shutter --require-installer --directory release-artifacts --version "$version" --commit "$GITHUB_SHA" --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-      - name: Publish prerelease
+      - name: Stage release draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: >-
           gh release create "$TAG" release-artifacts/*
-          --verify-tag --prerelease --title "KohdaLab PLE ${TAG#v}" --notes-file RELEASE-NOTES.md
+          --verify-tag --draft --title "KohdaLab PLE ${TAG#v}" --notes-file RELEASE-NOTES.md

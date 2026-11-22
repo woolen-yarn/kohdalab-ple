@@ -1,4 +1,4 @@
-# KohdaLab PLE v0.3.14 — Windows実機検証の入口
+# KohdaLab PLE v1.0.0 — Windows測定の入口
 
 [ダウンロード表](README.md#downloads--ダウンロード)からWindows x64のSetup.exeとSHA-256を取得し、照合してから管理者権限でインストールします。スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPの場合は全体を展開して `kohdalab-ple.exe` を起動します。配布版の起動にRustは不要で、DemoにはPythonも機器も不要です。
 
@@ -6,7 +6,7 @@
 
 ## 実機PCへ用意するもの
 
-- 取得PC：64-bit Windows Python、LightFieldとAutomation SDK、PM100USB/PM100D用の旧TLPM helperと対応ドライバー。
+- 取得PC：64-bit Windows Python、LightFieldとAutomation SDK、PM100USB/PM100D用のTLPMX 64-bit SDKまたは従来TLPM helperと対応ドライバー。
 - CONEX制御PC：Newport SDKとCONEXサーバー。既定はX=COM3、Y=COM4。今回のPLE走査はY、0–25 mmです。
 - レーザー3900S、分光器HRS-300。カメラ・グレーティング・パワーセンサーは接続時に自動取得します。SDKが公開しない情報だけ補足します。
 
@@ -14,7 +14,7 @@
 
 ## 最初の接続と測定
 
-1. アプリのインストール先、またはportable版の展開先にある `examples/ple-hardware-settings.json` を設定フォルダーへ `hardware-settings.local.json` としてコピーします。Python、LightField experiment、CONEXのhost/port、パワーメーターのhelperフォルダーとVISA resourceを実値に置き換えます。位置・波長の校正点には実測値を使います。
+1. アプリのインストール先、またはportable版の展開先にある `examples/ple-hardware-settings.json` を設定フォルダーへ `hardware-settings.local.json` としてコピーします。Python、LightField experiment、CONEXのhost/port、パワーメーターのSDK/helperフォルダーとVISA resourceを実値に置き換えます。位置・波長の校正点には実測値を使います。
 2. PowerShellでアプリのインストール先、またはportable版の展開先を開き、実機取得に使う64-bit Pythonで `python -m pip install -r bridge/requirements.txt` を実行します。`LIGHTFIELD_ROOT` は[導入手順](docs/guides/install.md)に従って設定し、サーバーが認証を使う場合は[CONEXサーバー手順](servers/conex-cc/README.md)に従って設定します。
 3. 同じフォルダーから、機器を動かさずに設定とSDKの導入状態を確認します。
 
@@ -29,7 +29,7 @@
 
 同じ取得スペクトルに励起ピークとPLが入ることが必要です。搭載光学系、フィルター、検出器範囲、飽和、実測位置–波長校正、センサーの補正波長は現地で確認します。Connectはレーザー始動やCONEX原点復帰を行いません。
 
-この配布版は実機確認用Previewです。[配布検証記録](docs/validation/README.md)にはWindowsの版・設定検査や隔離環境でのSetup試験があります。測定PCでのGUI起動、メーカーSDKとの接続、実測と停止は現地で確認してください。実行ファイルの依存関係は同梱の `windows-imports.txt` を参照してください。
+この配布版は1.0.0正式版です。[配布検証記録](docs/validation/README.md)にはWindowsの版・設定検査や隔離環境でのSetup試験があります。測定PCでのGUI起動、メーカーSDKとの接続、実測と停止は現地で確認してください。実行ファイルの依存関係は同梱の `windows-imports.txt` を参照してください。
 
 ## 外部APIとkohdalab-shutter
 

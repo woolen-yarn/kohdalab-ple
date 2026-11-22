@@ -24,7 +24,7 @@ NSIS_URLS = (
     "https://prdownloads.sourceforge.net/nsis/nsis-3.12.zip",
     "https://mirrors.mit.edu/macports/distfiles/nsis/nsis-3.12.zip",
 )
-REQUIRED = ("kohdalab-ple.exe", "START-HERE.md", "LICENSE", "bridge/ple_bridge.py",
+REQUIRED = ("kohdalab-ple.exe", "START-HERE.md", "LICENSE", "bridge/ple_bridge.py", "bridge/tlpmx.py",
             "examples/ple-settings.json", "bindings/python/kohdalab_ple/__init__.py",
             "companions/kohdalab-shutter/kohdalab-shutter-gui.exe",
             "companions/kohdalab-shutter/companion-origin.json")

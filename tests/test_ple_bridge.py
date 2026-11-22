@@ -231,6 +231,39 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(bridge.LegacyThorlabsPowerMeter._set_meter_average(Meter(),.5),.5)
         with self.assertRaisesRegex(bridge.BridgeError,"averaging readback"):bridge.LegacyThorlabsPowerMeter._set_meter_average(Meter(),.2)
 
+    def test_lightfield_vendor_paths_preserve_drive_unc_and_decimal_names(self):
+        from pathlib import PureWindowsPath
+        cases = [
+            (r"\\?\C:\runs\Y_18.7200mm.spe", r"C:\runs\Y_18.7200mm.spe"),
+            (r"\\?\UNC\server\share\run\background.spe", r"\\server\share\run\background.spe"),
+            (r"C:\runs\background.spe", r"C:\runs\background.spe"),
+        ]
+        for original, expected in cases:
+            with self.subTest(original=original):
+                self.assertEqual(bridge._lightfield_path(PureWindowsPath(original)), expected)
+        # Do not silently reinterpret other Windows device namespaces.
+        self.assertEqual(bridge._lightfield_path(PureWindowsPath(r"\\?\Volume{abc}\run")),
+                         r"\\?\Volume{abc}\run")
+
+    def test_lightfield_lock_probe_uses_vendor_supported_path(self):
+        from pathlib import PureWindowsPath
+        from types import SimpleNamespace
+        paths = []
+        closed = []
+        def open_file(path, *_):
+            if path.startswith("\\\\?\\"):
+                raise ValueError("unsupported vendor path")
+            paths.append(path)
+            return SimpleNamespace(Dispose=lambda: closed.append(path))
+        spec = bridge.LightFieldSpectrometer()
+        spec.api = {"File": SimpleNamespace(Open=open_file),
+                    "FileMode": SimpleNamespace(Open=1),
+                    "FileAccess": SimpleNamespace(Read=1),
+                    "FileShare": SimpleNamespace(**{"None":0})}
+        self.assertTrue(spec._exclusively_readable([PureWindowsPath(r"\\?\C:\runs\background.spe")]))
+        self.assertEqual(paths, [r"C:\runs\background.spe"])
+        self.assertEqual(closed, paths)
+
     def test_lightfield_stop_requires_ready_readback(self):
         class Experiment:
             IsReadyToRun=False
@@ -329,6 +362,15 @@ class BridgeTests(unittest.TestCase):
             p = Path(tmp) / "legacy.csv"
             p.write_text("R,F,Y,X,Wavelength (nm),Intensity\n0,0,10,100,700.0,3\n0,0,10,101,701.0,4\n")
             self.assertEqual(bridge._read_one_roi_csv(p), ([700.0, 701.0], [3.0, 4.0]))
+
+    def test_csv_reads_lightfield_w_i_columns_with_detector_metadata(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "lightfield.csv"
+            path.write_text("R,F,W,Y,X,I\n1,1,788.4312,0,0,596.0000\n1,1,788.4718,0,1,577.0000\n")
+            self.assertEqual(
+                bridge._read_one_roi_csv(path),
+                ([788.4312, 788.4718], [596.0, 577.0]),
+            )
 
     def test_csv_rejects_uncalibrated_metadata_only_export(self):
         with TemporaryDirectory() as tmp:
