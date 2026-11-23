@@ -19,15 +19,18 @@ activity and requests optical cleanup even when no job is active. When a
 `job_id` is supplied it is validated before anything is stopped: it must be a
 UUID naming the active job, or a retained command acknowledgement whose
 `run_job` is the active job. A malformed ID returns `validation`; an ID that
-was never retained returns `unknown_job`; a retained ID that is no longer
-active returns `invalid_state`. In those cases nothing is stopped. The native
-`stop` action is unchanged and ignores identifiers.
+was never retained returns `unknown_job`; a retained job that is still running
+but is not the active job (or a command with no linked job) returns
+`invalid_state`. In those cases nothing is stopped. A job that already reached
+a terminal state, or a command whose linked acquisition did, returns
+`requested: false` with that job's `receipt`; it does not stop a newer job or
+request cleanup. The native `stop` action is unchanged and ignores identifiers.
 
 While Python holds control, or Stop cleanup is outstanding, the GUI shows a
 nonmodal **External control** strip across the top of the window. It names the
 client type (Python), says what is actually happening (measuring, moving the
 stage, waiting for a confirmation, stopping), and offers **Stop** followed by
-**Take control**. Take control also requests Stop and revokes the lease.
+**Take control**; in a narrow window the strip wraps so both stay reachable. Take control also requests Stop and revokes the lease.
 
 PLE retains its command-acknowledgement/run-job boundary: an acknowledged
 command is not an acquisition result. Poll `control.result` until the linked

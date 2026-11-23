@@ -258,7 +258,7 @@ class ConexController:
         # _readback re-enter; no other lock is acquired while it is held.
         with self._sdk_lock:
             if self._move_lock.locked():
-                raise ConexError("cannot connect while a move is active")
+                raise ConexError("cannot connect while a move or close is active")
             if self._driver is not None:
                 if port != self._port:
                     raise ConexError(f"CONEX is already open on {self._port}")
@@ -353,10 +353,16 @@ class ConexController:
         raise ConexError("CONEX stop is unconfirmed: controller is not ready after ST")
 
     def close(self) -> None:
-        if self._move_lock.locked():
+        # Reserve the move slot for the whole close (same order as move:
+        # _move_lock, then _sdk_lock) so a move cannot be admitted between
+        # the check and the port release.
+        if not self._move_lock.acquire(blocking=False):
             raise ConexError("cannot close while a move is active")
-        with self._sdk_lock:
-            self._close_locked()
+        try:
+            with self._sdk_lock:
+                self._close_locked()
+        finally:
+            self._move_lock.release()
 
     def _close_locked(self) -> None:
         """Close the published session; the caller holds ``_sdk_lock``."""

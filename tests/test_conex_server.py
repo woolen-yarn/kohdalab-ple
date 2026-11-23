@@ -366,6 +366,88 @@ class ConexControllerTests(unittest.TestCase):
             self.controller.move({"position_mm": 2, "timeout_s": 1})
         self.assertFalse(any(call[0] == "PA_Set" for call in self.driver.calls))
 
+    def test_close_admission_never_overlaps_a_move(self):
+        # Gate close at the _sdk_lock (after its admission check) and start a
+        # move there: the move must be refused, never commanded, while close
+        # proceeds to release the port.
+        inner = self.controller._sdk_lock
+        admitted, move_done = threading.Event(), threading.Event()
+        active = []  # move-slot state observed at CloseInstrument
+
+        class GatedLock:
+            def __enter__(self):
+                if threading.current_thread().name == "closer" and not admitted.is_set():
+                    admitted.set()
+                    move_done.wait(5)
+                return inner.__enter__()
+
+            def __exit__(self, *exc):
+                return inner.__exit__(*exc)
+
+        def close_instrument():
+            active.append(self.driver.state)
+            self.driver.calls.append(("close",))
+
+        self.driver.CloseInstrument = close_instrument
+        self.controller._sdk_lock = GatedLock()
+        results = {}
+
+        def closer():
+            try: results["close"] = self.controller.close()
+            except Exception as error: results["close"] = error
+
+        def mover():
+            try: results["move"] = self.controller.move({"position_mm": 2, "timeout_s": 0.2})
+            except Exception as error: results["move"] = error
+            finally: move_done.set()
+
+        close_thread = threading.Thread(target=closer, name="closer")
+        close_thread.start()
+        self.assertTrue(admitted.wait(5))
+        move_thread = threading.Thread(target=mover, name="mover")
+        move_thread.start()
+        move_thread.join(5)
+        close_thread.join(5)
+        self.assertFalse(close_thread.is_alive() or move_thread.is_alive())
+
+        self.assertIsInstance(results["move"], conex.ConexError)
+        self.assertIn("already active", str(results["move"]))
+        self.assertIsNone(results["close"])
+        self.assertFalse(any(call[0] == "PA_Set" for call in self.driver.calls))
+        self.assertEqual(active, ["32"])  # stage idle when the port closed
+        self.assertIsNone(self.controller._driver)
+        self.assertFalse(self.controller._move_lock.locked())
+
+    def test_close_is_refused_while_a_move_is_commanded(self):
+        commanded, release = threading.Event(), threading.Event()
+        original = self.driver.PA_Set
+
+        def gated_pa_set(*args):
+            result = original(*args)
+            commanded.set()
+            release.wait(5)
+            return result
+
+        self.driver.PA_Set = gated_pa_set
+        results = []
+
+        def mover():
+            try: self.controller.move({"position_mm": 2, "timeout_s": 0.2})
+            except Exception as error: results.append(error)
+
+        thread = threading.Thread(target=mover)
+        thread.start()
+        self.assertTrue(commanded.wait(5))
+        try:
+            with self.assertRaisesRegex(conex.ConexError, "cannot close while a move is active"):
+                self.controller.close()
+            self.assertNotIn(("close",), self.driver.calls)
+            self.assertIsNotNone(self.controller._driver)
+        finally:
+            release.set()
+            thread.join(5)
+        self.assertFalse(thread.is_alive())
+
     def test_stop_waits_for_ready_and_has_a_bounded_timeout(self):
         self.driver.ST = lambda *_: (0, "")
         self.driver.state = "28"
