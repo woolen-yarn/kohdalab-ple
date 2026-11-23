@@ -1,4 +1,18 @@
-# KohdaLab PLE 1.0.0
+# KohdaLab PLE 1.0.1
+
+## Changes / 変更点
+
+Validate the target of Stop, preserve linked job completion, and use the shared TRKR/PLE CONEX serial lock. Update the external-control bar and common SDK.
+
+## Validation scope / 検証範囲
+
+The previous hardware compatibility and safety guidance remains applicable. The release software checks include simulation. New physical-device operating scenarios are outside this qualification.
+
+See SHA256SUMS.txt and the release page's platform packages. / 対応OSとSHA-256は配布ページをご覧ください。
+
+## Previous release / 前の版
+
+### KohdaLab PLE 1.0.0
 
 ## Initial release / 初回リリース
 

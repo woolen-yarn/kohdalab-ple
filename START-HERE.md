@@ -1,4 +1,4 @@
-# KohdaLab PLE v1.0.0 — Windows測定の入口
+# KohdaLab PLE v1.0.1 — Windows測定の入口
 
 [ダウンロード表](README.md#downloads--ダウンロード)からWindows x64のSetup.exeとSHA-256を取得し、照合してから管理者権限でインストールします。スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPの場合は全体を展開して `kohdalab-ple.exe` を起動します。配布版の起動にRustは不要で、DemoにはPythonも機器も不要です。
 
@@ -29,7 +29,7 @@
 
 同じ取得スペクトルに励起ピークとPLが入ることが必要です。搭載光学系、フィルター、検出器範囲、飽和、実測位置–波長校正、センサーの補正波長は現地で確認します。Connectはレーザー始動やCONEX原点復帰を行いません。
 
-この配布版は1.0.0正式版です。[配布検証記録](docs/validation/README.md)にはWindowsの版・設定検査や隔離環境でのSetup試験があります。測定PCでのGUI起動、メーカーSDKとの接続、実測と停止は現地で確認してください。実行ファイルの依存関係は同梱の `windows-imports.txt` を参照してください。
+この配布版は1.0.1正式版です。[配布検証記録](docs/validation/README.md)にはWindowsの版・設定検査や隔離環境でのSetup試験があります。測定PCでのGUI起動、メーカーSDKとの接続、実測と停止は現地で確認してください。実行ファイルの依存関係は同梱の `windows-imports.txt` を参照してください。
 
 ## 外部APIとkohdalab-shutter
 
