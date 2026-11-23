@@ -33,7 +33,9 @@ ple = GuiPLE(endpoint="/path/to/ple-gui-....json")
 
 `with GuiPLE(...) as ple:` または `acquire()` で排他的なleaseを取得します。GUI側は設定・接続・Start・手動移動をロックし、プロットの閲覧、Stop、Take controlを残します。ハートビートの有効期限は10秒です。失効・Take controlは所有者を恒久的に失効させ、Stopを要求します。同じクライアントは再取得せず、新しいクライアントを作ります。正常なrelease後は同じクライアントを再利用できます。
 
-Stopは認証トークンがあればleaseなしでも要求できます。 `capabilities` と `control.describe` は `safety.stop_requires_lease: false` を返します。Stopの返事は停止要求の受理であり、物理的な停止完了ではありません。`stop_and_wait()` は測定ワーカー・接続処理・CONEXとLightFieldのStop応答待ちを監視し、未確認の状態を成功扱いしません。自動シャッターは閉鎖読戻しを確認します。手動BG方式の遮光はユーザーの操作です。
+外部制御中またはStop後の後処理中は、ウィンドウ上部にモーダルでない「External control」帯を表示します。帯には操作元（Python）と実際の動作（測定中、ステージ移動中、確認待ち、停止中など）が表示され、Stop、Take controlの順にボタンが並びます。
+
+Stopは認証トークンがあればleaseなしでも要求できます。 `capabilities` と `control.describe` は `safety.stop_requires_lease: false` を返します。共通APIの `control.stop` に `job_id` を付けた場合は、停止する前にIDを検証します。実行中のジョブ、または実行中のジョブにリンクしたコマンド受領IDだけを受け付けます。不正な形式は`validation`、未保持のIDは`unknown_job`、終了済みのIDは`invalid_state`となり、何も停止しません。`job_id`を省略すると、ジョブがなくても従来どおり全体を停止し、光学系の後処理も行います。Stopの返事は停止要求の受理であり、物理的な停止完了ではありません。`stop_and_wait()` は測定ワーカー・接続処理・CONEXとLightFieldのStop応答待ちを監視し、未確認の状態を成功扱いしません。自動シャッターは閉鎖読戻しを確認します。手動BG方式の遮光はユーザーの操作です。
 
 Pythonの既定動作は、待機の期限切れ、変更要求の応答喪失、失敗した測定の待機終了時にStopを要求します。応答を失った操作を自動再送しません。`close()` / context終了は停止完了を待ってleaseを解放します。`stop_on_timeout=False` はPython側の期限切れ停止を明示的に無効化する選択肢ですが、lease失効時のGUI Stopは残ります。
 

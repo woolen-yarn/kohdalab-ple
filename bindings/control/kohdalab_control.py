@@ -94,7 +94,7 @@ def _directories(application=None) -> list[Path]:
         Path.home,
     )
     root = home / ".kohdalab"
-    applications = ("iv", "trkr", "camera", "shutter", "ple")
+    applications = ("iv", "trkr", "camera", "shutter", "ple", "slm")
     if application is not None:
         name = application.removeprefix("kohdalab-")
         applications = (name,) if name in applications else ()
@@ -476,8 +476,19 @@ class ControlClient:
             self.acquire()
         return self._call("stop", **params)
 
-    def stop_and_wait(self, *, timeout=10.0):
+    def stop_and_wait(self, job_id=None, *, timeout=10.0, poll_interval=0.05):
+        """Stop and wait for confirmed cleanup.
+
+        With ``job_id``, stop exactly that job and wait for its own terminal
+        receipt (required by apps whose stop targets a job, e.g. TRKR). Without
+        it, keep the original app-wide stop and global status wait.
+        """
         timeout = _positive(timeout, "timeout")
+        poll_interval = _positive(poll_interval, "poll_interval")
+        if job_id is not None:
+            if not isinstance(job_id, str) or not job_id:
+                raise ValueError("job_id must be a non-empty string")
+            return self._stop_job_and_wait(job_id, timeout, poll_interval)
         self.stop()
         deadline = time.monotonic() + timeout
         while True:
@@ -494,9 +505,89 @@ class ControlClient:
                     code="timeout",
                     outcome_unknown=True,
                 )
-            time.sleep(0.05)
+            time.sleep(poll_interval)
+
+    def _stop_job_and_wait(self, job_id, timeout, poll_interval):
+        # Terminal receipts are stopped idempotently by the application; the
+        # stop ACK itself is never treated as cleanup confirmation. A receipt
+        # may name the job doing the real work via ``linked_job_id`` (e.g. a
+        # PLE start-command ACK that completes at once while the acquisition
+        # still runs); only the final linked receipt can prove cleanup. Links
+        # are followed by read-only result queries over the authenticated
+        # channel; the single targeted Stop above is never repeated.
+        self.stop(job_id=job_id)
+        deadline = time.monotonic() + timeout
+        current = job_id
+        visited = {job_id}
+        while True:
+            receipt = self.result(current)
+            if not isinstance(receipt, dict):
+                raise ControlError(
+                    "Invalid job receipt", code="validation", request_id=current
+                )
+            # The requested job may omit its own ID (original contract); a
+            # followed link must echo exactly the ID it was reached by.
+            if receipt.get("job_id") not in (
+                (None, current) if current == job_id else (current,)
+            ):
+                raise ControlError(
+                    "Receipt does not match the requested job",
+                    code="validation",
+                    request_id=current,
+                )
+            linked = receipt.get("linked_job_id")
+            if linked is not None and linked != current:
+                if not isinstance(linked, str) or not linked:
+                    raise ControlError(
+                        "Invalid linked job ID", code="validation", request_id=current
+                    )
+                if linked in visited or len(visited) >= 32:
+                    raise ControlError(
+                        "Receipt link cycle", code="validation", request_id=current
+                    )
+                visited.add(linked)
+                current = linked
+                if time.monotonic() >= deadline:
+                    raise ControlError(
+                        "Stop acknowledgement is not cleanup confirmation",
+                        code="timeout",
+                        request_id=current,
+                        outcome_unknown=True,
+                    )
+                continue
+            if receipt.get("terminal") is True:
+                if receipt.get("status") in (
+                    "completed",
+                    "stopped",
+                ) and receipt.get("cleanup") in ("verified", "not_required"):
+                    return receipt
+                raise ControlError(
+                    "Stop cleanup was not confirmed; inspect receipt.native",
+                    code="cleanup_unconfirmed",
+                    request_id=current,
+                )
+            if time.monotonic() >= deadline:
+                raise ControlError(
+                    "Stop acknowledgement is not cleanup confirmation",
+                    code="timeout",
+                    request_id=current,
+                    outcome_unknown=True,
+                )
+            time.sleep(min(poll_interval, max(0, deadline - time.monotonic())))
 
     def release(self, *, timeout=10.0):
+        """Return ownership to the GUI.
+
+        A release that the application reports as ``continuing`` (an active job
+        intentionally keeps running under the app's ``on_release`` policy)
+        completes immediately: the lease is gone, the job is not stopped, and
+        the application's own cleanup evidence (``cleanup``, ``job_id``, ``job``)
+        is returned unchanged. Follow that job with ``wait(job_id)``; to stop it,
+        use ``stop_and_wait(job_id)`` *before* releasing or the GUI's Stop.
+
+        Otherwise the original behavior is kept: wait until the application
+        confirms release and cleanup, and report a timeout rather than hide it.
+        """
         timeout = _positive(timeout, "timeout")
         with self._lock:
             if self._lease is None:
@@ -507,6 +598,13 @@ class ControlClient:
             # successful release response and poison voluntary reacquisition.
             self._heartbeat_stop.set()
             self._heartbeat_generation += 1
+            if not isinstance(result, dict):
+                raise ControlError("Invalid release response", code="validation")
+            if result.get("released") is True and result.get("continuing") is True:
+                # Intentional continuation is not pending release cleanup.
+                self._lease = None
+                return result
+            acknowledgement = result
             deadline = time.monotonic() + timeout
             while not (
                 result.get("released") is True
@@ -521,6 +619,8 @@ class ControlClient:
                         "released": True,
                         "cleanup": state["cleanup"],
                         "native": state,
+                        # Keep the application's original release evidence.
+                        "release": acknowledgement,
                     }
                     break
                 if state["phase"] == "error":
@@ -533,6 +633,22 @@ class ControlClient:
                     )
                 time.sleep(0.05)
             self._lease = None
+            job_id = acknowledgement.get("job_id")
+            if result is not acknowledgement and isinstance(job_id, str) and job_id:
+                # Release requested a job stop. Global ownership/status alone
+                # cannot prove that job's cleanup; report its own receipt.
+                receipt = self.result(job_id)
+                result["job_id"] = job_id
+                result["job"] = receipt
+                if receipt.get("job_id") not in (None, job_id) or not (
+                    receipt.get("terminal") is True
+                    and receipt.get("cleanup") in ("verified", "not_required")
+                ):
+                    raise ControlError(
+                        "Release cleanup was not confirmed; inspect the job receipt",
+                        code="cleanup_unconfirmed",
+                        request_id=job_id,
+                    )
             return result
 
     def close(self):

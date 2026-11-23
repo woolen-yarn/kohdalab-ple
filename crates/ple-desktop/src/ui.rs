@@ -1325,6 +1325,7 @@ impl PleApp {
     pub(super) fn draw(&mut self, root: &mut egui::Ui) {
         let ctx = &root.ctx().clone();
         self.geometry.clear();
+        self.external_control_strip(root);
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(BG))
             .show_inside(root, |ui| {

@@ -45,13 +45,157 @@ def _sdk_error(error: Any, operation: str) -> None:
         raise ConexError(f"CONEX {operation} failed: {error}")
 
 
+# Cross-process serial-port lease shared with TRKR ``Port::open``
+# (trkr-motion: ``kohdalab-motion-<hex>.lock`` in Rust ``std::env::temp_dir()``,
+# locked with fs2 ``try_lock_exclusive``). Every detail below mirrors that
+# implementation so that both applications exclude each other on one host.
+
+# Rust ``str::trim`` removes Unicode White_Space; Python ``str.strip`` would
+# also remove U+001C..U+001F, so the exact set is spelled out.
+_RUST_WHITESPACE = "".join(map(chr, [*range(0x09, 0x0E), 0x20, 0x85, 0xA0, 0x1680, *range(0x2000, 0x200B),
+                                      0x2028, 0x2029, 0x202F, 0x205F, 0x3000]))
+_ASCII_UPPER = str.maketrans("abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+
+def serial_lock_key(port: str) -> str:
+    """Hex key equal to TRKR's ``name.trim().to_ascii_uppercase().replace("\\\\.\\", "")``."""
+    normalized = port.strip(_RUST_WHITESPACE).translate(_ASCII_UPPER).replace("\\\\.\\", "")
+    try:
+        return normalized.encode("utf-8").hex()
+    except UnicodeEncodeError as error:
+        raise ConexError("com_port must be valid Unicode text") from error
+
+
+def host_temp_dir() -> str:
+    """The directory Rust ``std::env::temp_dir()`` returns for this process."""
+    if os.name == "nt":
+        return _windows_temp_dir()
+    return os.environ.get("TMPDIR", "/tmp")
+
+
+def serial_lock_path(port: str, directory: str | None = None) -> str:
+    return os.path.join(host_temp_dir() if directory is None else directory,
+                        f"kohdalab-motion-{serial_lock_key(port)}.lock")
+
+
+if os.name == "nt":  # pragma: no cover - exercised on Windows only
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    _LOCKFILE_FAIL_IMMEDIATELY, _LOCKFILE_EXCLUSIVE_LOCK = 0x1, 0x2
+    _ERROR_LOCK_VIOLATION = 33
+
+    class _OVERLAPPED(ctypes.Structure):
+        _fields_ = [("Internal", ctypes.c_size_t), ("InternalHigh", ctypes.c_size_t),
+                    ("Offset", wintypes.DWORD), ("OffsetHigh", wintypes.DWORD),
+                    ("hEvent", wintypes.HANDLE)]
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                                     wintypes.DWORD, ctypes.POINTER(_OVERLAPPED)]
+    _kernel32.LockFileEx.restype = wintypes.BOOL
+    _kernel32.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                                       ctypes.POINTER(_OVERLAPPED)]
+    _kernel32.UnlockFileEx.restype = wintypes.BOOL
+
+    def _windows_temp_dir() -> str:
+        # Rust std uses GetTempPath2W and falls back to GetTempPathW.
+        get = getattr(_kernel32, "GetTempPath2W", None) or _kernel32.GetTempPathW
+        get.argtypes, get.restype = [wintypes.DWORD, wintypes.LPWSTR], wintypes.DWORD
+        size = 261
+        while True:
+            buffer = ctypes.create_unicode_buffer(size)
+            length = get(size, buffer)
+            if length == 0:
+                raise ConexError(f"could not resolve the temporary directory: {ctypes.WinError(ctypes.get_last_error())}")
+            if length < size:
+                return buffer[:length]
+            size = length + 1
+
+    def _try_lock(fd: int) -> bool:
+        # Same call as fs2 try_lock_exclusive: whole range from offset 0.
+        handle = msvcrt.get_osfhandle(fd)
+        if _kernel32.LockFileEx(handle, _LOCKFILE_EXCLUSIVE_LOCK | _LOCKFILE_FAIL_IMMEDIATELY,
+                                0, 0xFFFFFFFF, 0xFFFFFFFF, ctypes.byref(_OVERLAPPED())):
+            return True
+        code = ctypes.get_last_error()
+        if code == _ERROR_LOCK_VIOLATION:
+            return False
+        raise OSError(code, ctypes.FormatError(code))
+
+    def _unlock(fd: int) -> None:
+        _kernel32.UnlockFileEx(msvcrt.get_osfhandle(fd), 0, 0xFFFFFFFF, 0xFFFFFFFF, ctypes.byref(_OVERLAPPED()))
+else:
+    import errno
+    import fcntl
+
+    def _windows_temp_dir() -> str:  # pragma: no cover - not reachable off Windows
+        raise ConexError("Windows temporary directory requested on a non-Windows host")
+
+    def _try_lock(fd: int) -> bool:
+        # Same call as fs2 try_lock_exclusive on Unix.
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError as error:
+            if error.errno in (errno.EWOULDBLOCK, errno.EAGAIN):
+                return False
+            raise
+
+    def _unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+class SerialPortLease:
+    """Exclusive OS lock on the shared KohdaLab lock file for one serial port.
+
+    The lock file is never removed; only the lock is released.
+    """
+    def __init__(self, port: str, path: str, fd: int) -> None:
+        self.port, self.path, self._fd = port, path, fd
+
+    @classmethod
+    def acquire(cls, port: str, directory: str | None = None) -> "SerialPortLease":
+        path = serial_lock_path(port, directory)
+        try:
+            # Like Rust OpenOptions read+write+create without truncation.
+            # Python descriptors are non-inheritable by default.
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0))
+        except OSError as error:
+            raise ConexError(f"could not open serial-port lock {path}: {error}") from error
+        try:
+            locked = _try_lock(fd)
+        except OSError as error:
+            os.close(fd)
+            raise ConexError(f"could not lock serial port {port}: {error}") from error
+        if not locked:
+            os.close(fd)
+            raise ConexError(f"Serial port {port} is already used by another measurement process")
+        return cls(port, path, fd)
+
+    def release(self) -> None:
+        fd, self._fd = self._fd, None
+        if fd is None:
+            return
+        try:
+            _unlock(fd)
+        finally:
+            os.close(fd)
+
+
 class ConexController:
     """A single SDK instance with short lock-held calls only."""
-    def __init__(self, driver_factory: Callable[[], Any] | None = None, sdk_directory: str | None = None) -> None:
+    def __init__(self, driver_factory: Callable[[], Any] | None = None, sdk_directory: str | None = None,
+                 lock_directory: str | None = None) -> None:
         self._factory = driver_factory
         self._sdk_directory = sdk_directory or os.environ.get("CONEX_SDK_DIR")
+        self._lock_directory = lock_directory
         self._driver: Any = None
         self._port: str | None = None
+        # Held from before the SDK opens the port until CloseInstrument is
+        # confirmed; retained (until process exit) when that is unknown.
+        self._lease: SerialPortLease | None = None
         self._sdk_lock = threading.RLock()
         self._move_lock = threading.Lock()
         self._abort: threading.Event | None = None
@@ -100,31 +244,58 @@ class ConexController:
                 "ready": error_text == "" and state_text in {"32", "33", "34"}}
 
     def connect(self, args: dict[str, Any]) -> dict[str, Any]:
-        if self._move_lock.locked():
-            raise ConexError("cannot connect while a move is active")
         port = args.get("com_port")
         if not isinstance(port, str) or not port.strip():
             raise ConexError("com_port must be a non-empty string")
         port = port.strip()
-        if self._driver is not None:
-            if port != self._port:
-                raise ConexError(f"CONEX is already open on {self._port}")
-            return self._readback()
-        driver = self._new_driver()
+        velocity = None
+        if "velocity_mm_s" in args and args["velocity_mm_s"] is not None:
+            velocity = _number("velocity_mm_s", args["velocity_mm_s"], positive=True)
+        # Admission is serialized from the driver/lease checks through state
+        # publication and the initial readback, so concurrent requests
+        # (ThreadingTCPServer) for different ports cannot both pass the checks
+        # and overwrite each other's driver and lease. The RLock lets
+        # _readback re-enter; no other lock is acquired while it is held.
         with self._sdk_lock:
-            result = driver.OpenInstrument(port)
+            if self._move_lock.locked():
+                raise ConexError("cannot connect while a move is active")
+            if self._driver is not None:
+                if port != self._port:
+                    raise ConexError(f"CONEX is already open on {self._port}")
+                return self._readback()
+            if self._lease is not None:
+                raise ConexError(f"the previous CONEX session on {self._lease.port} did not close cleanly; "
+                                 "its serial-port lock is kept until this bridge process exits")
+            # Fail closed before the vendor SDK is loaded or touches the port.
+            lease = SerialPortLease.acquire(port, self._lock_directory)
+            try:
+                driver = self._new_driver()
+            except BaseException:
+                lease.release()
+                raise
+            try:
+                result = driver.OpenInstrument(port)
+            except BaseException:
+                self._lease = lease  # open outcome unknown: keep the port locked
+                raise
             if result != 0:
+                lease.release()
                 raise ConexError(f"could not open CONEX port {port} (code {result})")
-            if "velocity_mm_s" in args and args["velocity_mm_s"] is not None:
-                velocity = _number("velocity_mm_s", args["velocity_mm_s"], positive=True)
-                _ret, error = driver.VA_Set(DEVICE, velocity, "")
-                _sdk_error(error, "VA_Set")
-        self._driver, self._port = driver, port
-        try:
-            return self._readback()
-        except Exception:
-            self.close()
-            raise
+            self._driver, self._port, self._lease = driver, port, lease
+            try:
+                if velocity is not None:
+                    _ret, error = driver.VA_Set(DEVICE, velocity, "")
+                    _sdk_error(error, "VA_Set")
+                return self._readback()
+            except Exception as error:
+                # Still under the lock: a move that started meanwhile is
+                # blocked before its initial readback completes and cannot
+                # have commanded motion, so closing here is safe.
+                try:
+                    self._close_locked()
+                except ConexError as close_error:
+                    raise ConexError(f"{error}; {close_error}") from error
+                raise
 
     def status(self) -> dict[str, Any]:
         return self._readback()
@@ -185,13 +356,26 @@ class ConexController:
         if self._move_lock.locked():
             raise ConexError("cannot close while a move is active")
         with self._sdk_lock:
-            driver = self._driver
-            self._driver = self._port = None
-            if driver is not None:
-                try:
-                    driver.CloseInstrument()
-                except Exception as error:  # pragma: no cover - vendor SDK
-                    raise ConexError(f"CONEX close failed: {error}") from error
+            self._close_locked()
+
+    def _close_locked(self) -> None:
+        """Close the published session; the caller holds ``_sdk_lock``."""
+        driver = self._driver
+        self._driver = self._port = None
+        if driver is None:
+            # Nothing confirmed closed; an orphaned lease stays held.
+            return
+        # On any close failure the lease is retained: the port may still
+        # be open, so another process must not take it.
+        try:
+            result = driver.CloseInstrument()
+        except Exception as error:
+            raise ConexError(f"CONEX close failed: {error}; serial-port lock retained") from error
+        if result not in (None, 0):
+            raise ConexError(f"CONEX close failed (code {result}); serial-port lock retained")
+        lease, self._lease = self._lease, None
+        if lease is not None:
+            lease.release()
 
 
 def _reply(request_id: Any, ok: bool, result: Any = None, error: str | None = None) -> bytes:

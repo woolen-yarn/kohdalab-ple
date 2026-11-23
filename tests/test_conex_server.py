@@ -1,7 +1,9 @@
 import contextlib
 import io
 import os
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -85,10 +87,228 @@ class ConexServerStartupTests(unittest.TestCase):
         self.assertEqual(server.call_args.args[0], ("127.0.0.2", 9000))
 
 
+# Child process holding/probing a lock with the raw OS call fs2 0.4
+# try_lock_exclusive uses (TRKR Port::open), independent of conex_server.
+_RAW_LOCK = r"""
+import os, sys
+path, mode = sys.argv[1], sys.argv[2]
+fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_BINARY", 0))
+if os.name == "nt":
+    import ctypes, msvcrt
+    from ctypes import wintypes
+    class OV(ctypes.Structure):
+        _fields_ = [("a", ctypes.c_size_t), ("b", ctypes.c_size_t), ("c", wintypes.DWORD),
+                    ("d", wintypes.DWORD), ("e", wintypes.HANDLE)]
+    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
+                             wintypes.DWORD, ctypes.POINTER(OV)]
+    ok = bool(k.LockFileEx(msvcrt.get_osfhandle(fd), 3, 0, 0xFFFFFFFF, 0xFFFFFFFF, ctypes.byref(OV())))
+else:
+    import fcntl
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); ok = True
+    except BlockingIOError:
+        ok = False
+print("locked" if ok else "busy", flush=True)
+if mode == "hold":
+    sys.stdin.readline()
+"""
+
+
+def _raw_lock(path, mode):
+    return subprocess.Popen([sys.executable, "-I", "-c", _RAW_LOCK, path, mode],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+
+
+def _lock_is_free(path):
+    child = _raw_lock(path, "probe")
+    out, _ = child.communicate(timeout=30)
+    return out.strip() == "locked"
+
+
+class SerialPortLeaseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = self.tmp.name
+        self.factory_calls = 0
+        self.driver = FakeDriver()
+
+    def factory(self):
+        self.factory_calls += 1
+        return self.driver
+
+    def controller(self):
+        return conex.ConexController(self.factory, lock_directory=self.dir)
+
+    def test_key_matches_trkr_normalization(self):
+        # TRKR: name.trim().to_ascii_uppercase().replace("\\\\.\\", "") as lowercase hex bytes.
+        self.assertEqual(conex.serial_lock_key("COM4"), "434f4d34")
+        for alias in [" com4\t", "\\\\.\\COM4", chr(0x3000) + "\\\\.\\cOm4" + chr(0x2028)]:
+            self.assertEqual(conex.serial_lock_key(alias), "434f4d34", repr(alias))
+        self.assertEqual(conex.serial_lock_key("\x1fCOM4"), "1f434f4d34")  # not Rust whitespace
+        self.assertEqual(conex.serial_lock_key("com" + chr(0xE9)), "434f4dc3a9")  # non-ASCII not uppercased
+        self.assertEqual(conex.serial_lock_path("COM10", self.dir),
+                         os.path.join(self.dir, "kohdalab-motion-434f4d3130.lock"))
+
+    def test_default_location_is_rust_temp_dir(self):
+        self.assertEqual(conex.serial_lock_path("COM4"),
+                         os.path.join(conex.host_temp_dir(), "kohdalab-motion-434f4d34.lock"))
+        if os.name != "nt":
+            with patch.dict(os.environ, {"TMPDIR": self.dir}):
+                self.assertEqual(conex.host_temp_dir(), self.dir)
+            with patch.dict(os.environ):
+                os.environ.pop("TMPDIR", None)
+                self.assertEqual(conex.host_temp_dir(), "/tmp")
+
+    def test_conflict_with_other_process_fails_before_sdk(self):
+        path = conex.serial_lock_path("COM4", self.dir)
+        holder = _raw_lock(path, "hold")
+        controller = self.controller()
+        try:
+            self.assertEqual(holder.stdout.readline().strip(), "locked")
+            with self.assertRaisesRegex(conex.ConexError, "already used by another measurement process"):
+                controller.connect({"com_port": "\\\\.\\com4"})
+            self.assertEqual(self.factory_calls, 0)
+            self.assertEqual(self.driver.calls, [])
+            self.assertIsNone(controller._lease)
+        finally:
+            holder.communicate("\n", timeout=30)
+        # Once the other process releases, the port can be taken.
+        controller.connect({"com_port": "COM4"})
+        self.assertFalse(_lock_is_free(path))
+        controller.close()
+
+    def test_held_while_connected_and_released_on_successful_close(self):
+        controller = self.controller()
+        controller.connect({"com_port": "COM4"})
+        path = conex.serial_lock_path("COM4", self.dir)
+        self.assertFalse(_lock_is_free(path))
+        controller.close()
+        self.assertEqual(self.driver.calls[-1], ("close",))
+        self.assertTrue(_lock_is_free(path))
+        self.assertTrue(os.path.exists(path))  # lock file is never removed
+
+    def test_close_failure_or_unknown_outcome_retains_lock(self):
+        def raises():
+            raise RuntimeError("io")
+        for name, close in [("raises", raises), ("code", lambda: -1)]:
+            with self.subTest(name):
+                self.driver = FakeDriver()
+                self.driver.CloseInstrument = close
+                controller = self.controller()
+                controller.connect({"com_port": "COM5"})
+                with self.assertRaisesRegex(conex.ConexError, "lock retained"):
+                    controller.close()
+                path = conex.serial_lock_path("COM5", self.dir)
+                self.assertFalse(_lock_is_free(path))
+                controller.close()  # nothing confirmed closed: still retained
+                self.assertFalse(_lock_is_free(path))
+                calls = self.factory_calls
+                with self.assertRaisesRegex(conex.ConexError, "did not close cleanly"):
+                    controller.connect({"com_port": "COM5"})
+                self.assertEqual(self.factory_calls, calls)
+                controller._lease.release()  # stands in for process exit
+                self.assertTrue(_lock_is_free(path))
+
+    def test_open_failures(self):
+        path = conex.serial_lock_path("COM6", self.dir)
+        # A reported open failure and an SDK load failure release the lock.
+        self.driver.OpenInstrument = lambda port: -1
+        with self.assertRaisesRegex(conex.ConexError, "code -1"):
+            self.controller().connect({"com_port": "COM6"})
+        self.assertTrue(_lock_is_free(path))
+        def broken_factory():
+            raise conex.ConexError("no SDK")
+        with self.assertRaisesRegex(conex.ConexError, "no SDK"):
+            conex.ConexController(broken_factory, lock_directory=self.dir).connect({"com_port": "COM6"})
+        self.assertTrue(_lock_is_free(path))
+        # An exception from OpenInstrument leaves the outcome unknown.
+        def throw(port):
+            raise RuntimeError("SDK fault")
+        self.driver.OpenInstrument = throw
+        controller = self.controller()
+        with self.assertRaisesRegex(RuntimeError, "SDK fault"):
+            controller.connect({"com_port": "COM6"})
+        self.assertFalse(_lock_is_free(path))
+        controller._lease.release()
+
+    def test_concurrent_connect_to_other_port_never_reaches_second_open(self):
+        opened, release = threading.Event(), threading.Event()
+        drivers = []
+
+        class GatedDriver(FakeDriver):
+            def OpenInstrument(self, port):
+                super().OpenInstrument(port)
+                opened.set()
+                release.wait(5)
+                return 0
+
+        def factory():
+            drivers.append(GatedDriver())
+            return drivers[-1]
+
+        controller = conex.ConexController(factory, lock_directory=self.dir)
+        # Wrap the RLock to observe (not alter) when the second request
+        # reaches it, so the interleaving is deterministic without sleeps.
+        inner, contended = controller._sdk_lock, threading.Event()
+
+        class ObservedLock:
+            def __enter__(self):
+                if threading.current_thread().name == "second":
+                    contended.set()
+                return inner.__enter__()
+
+            def __exit__(self, *exc):
+                return inner.__exit__(*exc)
+
+        controller._sdk_lock = ObservedLock()
+        results = {}
+
+        def run(name, port):
+            try:
+                results[name] = controller.connect({"com_port": port})
+            except Exception as error:
+                results[name] = error
+
+        first = threading.Thread(target=run, args=("first", "COM3"), name="first")
+        first.start()
+        self.assertTrue(opened.wait(5))
+        second = threading.Thread(target=run, args=("second", "COM8"), name="second")
+        second.start()
+        self.assertTrue(contended.wait(5))
+        release.set()
+        first.join(5)
+        second.join(5)
+        self.assertFalse(first.is_alive() or second.is_alive())
+
+        self.assertIsInstance(results["first"], dict)
+        self.assertIsInstance(results["second"], conex.ConexError)
+        self.assertIn("already open on COM3", str(results["second"]))
+        self.assertEqual(len(drivers), 1)
+        self.assertEqual([c for c in drivers[0].calls if c[0] == "open"], [("open", "COM3")])
+        self.assertIs(controller._driver, drivers[0])
+        self.assertEqual(controller._lease.port, "COM3")
+        self.assertFalse(_lock_is_free(conex.serial_lock_path("COM3", self.dir)))
+        self.assertTrue(_lock_is_free(conex.serial_lock_path("COM8", self.dir)))
+        controller.close()
+        self.assertTrue(_lock_is_free(conex.serial_lock_path("COM3", self.dir)))
+
+    def test_failed_readback_after_open_closes_and_releases(self):
+        self.driver.SL_Get = lambda *_: (0, 0.0, "fault")
+        controller = self.controller()
+        with self.assertRaisesRegex(conex.ConexError, "SL_Get failed"):
+            controller.connect({"com_port": "COM7"})
+        self.assertEqual(self.driver.calls[-1], ("close",))
+        self.assertTrue(_lock_is_free(conex.serial_lock_path("COM7", self.dir)))
+
+
 class ConexControllerTests(unittest.TestCase):
     def setUp(self):
         self.driver = FakeDriver()
-        self.controller = conex.ConexController(lambda: self.driver)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.controller = conex.ConexController(lambda: self.driver, lock_directory=tmp.name)
         self.controller.connect({"com_port": "COM4"})
 
     def tearDown(self):
