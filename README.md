@@ -25,9 +25,9 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| v1.0.0 / 正式版 | [Release v1.0.0](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v1.0.0): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
+| v1.0.1 / 正式版 | [Release v1.0.1](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v1.0.1): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
-Version 1.0.0 is the initial official release. / 1.0.0を初回の正式版として公開します。
+Version 1.0.1 updates Python control. / 1.0.1でPython操作を更新しました。
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
@@ -49,7 +49,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
-[Windows実機検証の入口 / Start here](START-HERE.md) · [v1.0.0 release notes / 更新内容](RELEASE-NOTES.md)
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v1.0.1 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 
