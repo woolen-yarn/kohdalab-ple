@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import ntpath
 import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
@@ -28,6 +29,15 @@ REQUIRED = ("kohdalab-ple.exe", "START-HERE.md", "LICENSE", "bridge/ple_bridge.p
             "examples/ple-settings.json", "bindings/python/kohdalab_ple/__init__.py",
             "companions/kohdalab-shutter/kohdalab-shutter-gui.exe",
             "companions/kohdalab-shutter/companion-origin.json")
+
+
+def _windows_reserved_component(name: str) -> bool:
+    # Use Windows path rules even when assembling the payload on another OS.
+    isreserved = getattr(ntpath, "isreserved", None)
+    if isreserved is not None:
+        return isreserved(name)
+    # Python 3.11 and 3.12 predate ntpath.isreserved.
+    return PureWindowsPath(name).is_reserved()
 
 
 def digest(path: Path) -> str:
@@ -56,7 +66,7 @@ def relative_path(value: str) -> str:
             or any(p in ("", ".", "..") for p in value.split("/"))
             or any(c in value for c in '<>:"|?*')
             or any(ord(c) < 32 for c in value)
-            or any(p.endswith((".", " ")) or PureWindowsPath(p).is_reserved() for p in path.parts)):
+            or any(p.endswith((".", " ")) or _windows_reserved_component(p) for p in path.parts)):
         raise ValueError(f"unsafe Windows payload path: {value!r}")
     return value.replace("$", "$$").replace("/", "\\")
 
