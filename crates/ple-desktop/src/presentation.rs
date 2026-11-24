@@ -5,7 +5,9 @@ use crate::{
     visuals::*,
 };
 use eframe::egui::{Align, Align2, Color32, FontId, Layout, Rect, Vec2};
-use egui_plot::{Legend, Line, LineStyle, Plot, PlotImage, PlotMemory, PlotPoint, Points, VLine};
+use egui_plot::{
+    HoverPosition, Legend, Line, LineStyle, Plot, PlotImage, PlotMemory, PlotPoint, Points, VLine,
+};
 const COLORS: [Color32; 6] = [BLUE, ORANGE, PURPLE, TEAL, RED, GREEN];
 // Exact 256-sample Matplotlib Inferno LUT, rounded to u8 from the official
 // source at matplotlib/lib/matplotlib/_cm_listed.py (_inferno_data).
@@ -445,11 +447,20 @@ impl PleApp {
             .allow_boxed_zoom(true)
             .allow_scroll(false)
             .allow_drag(true)
-            .label_formatter(move |name, p| {
-                format!(
+            .label_formatter(move |hover| {
+                // egui_plot 0.35 passed an empty series name away from data.
+                let (name, p) = match hover {
+                    HoverPosition::NearDataPoint {
+                        plot_name,
+                        position,
+                        ..
+                    } => (*plot_name, position),
+                    HoverPosition::Elsewhere { position } => ("", position),
+                };
+                Some(format!(
                     "{name}\nEmission: {:0.6}\nPL − BG: {:0.6e} {unit}",
                     p.x, p.y
-                )
+                ))
             });
         if has_data {
             p.auto_bounds(true)
@@ -756,7 +767,7 @@ impl PleApp {
         .allow_boxed_zoom(true)
         .allow_scroll(false)
         .allow_drag(true)
-        .label_formatter(|_, _| String::new());
+        .label_formatter(|_| None);
         let plot = if has_data {
             plot.auto_bounds(true)
         } else {

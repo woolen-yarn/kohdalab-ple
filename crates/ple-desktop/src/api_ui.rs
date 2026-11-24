@@ -178,7 +178,7 @@ impl PleApp {
                     .stroke(egui::Stroke::new(1.0_f32, visuals::BORDER))
                     .inner_margin(egui::Margin::symmetric(12, 6)),
             )
-            .show_inside(root, |ui| {
+            .show(root, |ui| {
                 // Wrapped so Stop / Take control flow onto the next line in a
                 // narrow window instead of being clipped off the right edge.
                 ui.horizontal_wrapped(|ui| {

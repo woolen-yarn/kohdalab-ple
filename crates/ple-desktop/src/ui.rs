@@ -1337,7 +1337,7 @@ impl PleApp {
         self.external_control_strip(root);
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(BG))
-            .show_inside(root, |ui| {
+            .show(root, |ui| {
                 let viewport = ui.max_rect();
                 if !self.layout.rails_initialized {
                     (self.layout.left_collapsed, self.layout.right_collapsed) =

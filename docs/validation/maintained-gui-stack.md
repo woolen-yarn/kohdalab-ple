@@ -8,9 +8,15 @@ Local evidence: 123 Rust tests, strict Clippy and native Mac Demo common-control
 
 ローカルではRust 123件、strict Clippy、Mac実GUIのDemo API検証が成功しました。Windows/Macのライセンス収集は不足0件で、上流のコミットとハッシュを記録しています。最終Windows/Mac配布CIは別途確認します。
 
-New physical fault/stop tests were waived by the operator this round; prior use is not a newly passed hardware test.
+## Paired update to eframe 0.35.0 / egui_plot 0.36.0 / eframe 0.35.0とegui_plot 0.36.0の同時更新
 
-利用者の指示により今回の実機異常・停止試験は省略しています。運用実績を今回の実機試験合格として記録しません。
+Unreleased, supersedes Dependabot #19 and #21: eframe/egui 0.35.0 with egui_plot 0.36.0. The lockfile resolves a single egui 0.35.0. Minimum desktop Rust stays 1.92 by crates.io metadata for eframe and egui_plot. The 0.37 pairing needs Rust 1.95 and is deferred. API migration only: `Panel::show_inside` is renamed `show`. Plot hover labels use `HoverPosition`, with the same text as before. Away from data, the series name is still empty. Settings, API schemas and layouts are unchanged.
+
+未公開。Dependabot #19・#21を置き換え、eframe/egui 0.35.0とegui_plot 0.36.0へ同時に更新します。lockfile上のeguiは0.35.0の1系統です。eframeとegui_plotのcrates.io記載により、Desktopの最低Rust版は1.92のままです。0.37系はRust 1.95が必要なため保留です。変更はAPI移行のみで、`Panel::show_inside`を`show`へ改名しました。プロットのホバー表示は`HoverPosition`へ移行し、表示文字列は従来と同じです。データ点から離れた位置では、従来どおり系列名を空にします。設定・APIスキーマ・配置は変更しません。
+
+Local verification on macOS passed the workspace tests, strict Clippy and the native Demo GUI/API sweep. Windows and macOS license collection found no missing texts. GitHub CI covers the minimum Rust build. The plot API now uses `None` for plots where labels were previously suppressed with an empty string.
+
+macOSでワークスペース試験・strict Clippy・実GUIのDemo通し検証に合格しました。Windows/macOS配布用のライセンス文書に不足はありません。最低対応Rust版でのビルドはGitHub CIで検証します。ラベルを非表示にするプロットでは、新APIの`None`を返します。
 
 ## Common SDK lease race / 共通SDKの制御権競合
 
