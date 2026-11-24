@@ -58,6 +58,22 @@ class WindowsInstallerTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=name): installer.relative_path(name)
         self.assertEqual(installer.relative_path("foo/$operator.txt"), "foo\\$$operator.txt")
 
+    def test_reserved_windows_device_names_are_rejected_on_every_host(self):
+        reserved = ("CON", "con", "Nul", "aux.txt", "PRN.tar.gz", "nul .txt", "COM1", "lpt9.log",
+                    "CONIN$", "conout$.txt", "COM\u00b9", "lpt\u00b2.txt", "Com\u00b3")
+        for name in reserved:
+            for path in (name, f"docs/{name}", f"docs/{name}/guide.md", f"a/b/{name}"):
+                with self.subTest(path=path), self.assertRaises(ValueError):
+                    installer.relative_path(path)
+
+    def test_ordinary_names_resembling_devices_are_accepted(self):
+        ordinary = ("CONSOLE.md", "console/readme.md", "com.txt", "COM0", "COM10", "LPT0.log",
+                    "nul_report.csv", "auxiliary/data.bin", "prn-notes.txt", "xcon.txt",
+                    "COM\u2074", "LPT\u2070", "docs/reference/guide.md", "kohdalab-ple.exe")
+        for path in ordinary:
+            with self.subTest(path=path):
+                self.assertEqual(installer.relative_path(path), path.replace("/", "\\"))
+
     def test_rejects_incomplete_payload_symlink_and_output_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
