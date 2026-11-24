@@ -61,6 +61,59 @@ jobs:
           $result = $output | ConvertFrom-Json
           if (-not $result.config_valid) { throw 'Application did not return a valid configuration report.' }
 
+  linux:
+    # Compile-and-test coverage for the enabled x11/wayland eframe backends.
+    # Linux is not a distributed product target; no packaging steps run here.
+    name: ubuntu-24.04 (build/test coverage)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # TRKR pin
+        with:
+          persist-credentials: false
+      - name: Install x11/wayland development libraries
+        run: |
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
+            pkg-config libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libgl1-mesa-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+      - name: Set up Rust checks
+        run: rustup toolchain install
+      - name: Set up Python for device-free bridge tests
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # TRKR pin
+        with:
+          python-version: '3.12'
+      - name: Common GUI control SDK (device-free)
+        run: python -m unittest discover -s bindings/control -p "test_*.py" -v
+      - name: Lint Rust workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test Rust workspace
+        run: cargo test --workspace --locked
+      - name: Test SDK adapters, clients and packaging without hardware
+        run: python -m unittest discover -s tests -v
+      - name: Build desktop application
+        run: cargo build --locked --bin kohdalab-ple
+
+  msrv:
+    name: Desktop minimum supported Rust
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Build desktop with the declared minimum Rust version
+        run: |
+          msrv=$(python -c 'import tomllib; print(tomllib.load(open("crates/ple-desktop/Cargo.toml", "rb"))["package"]["rust-version"])')
+          if [[ "$msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then msrv="$msrv.0"; fi
+          rustup toolchain install "$msrv" --profile minimal
+          cargo "+$msrv" build --locked --bin kohdalab-ple
+
   advisories:
     # Separate from the device-free test matrix so an unreachable advisory
     # database can never block build/test results. Real findings still fail.
@@ -105,21 +158,3 @@ jobs:
         # No ignore list: any vulnerability advisory fails this job.
         # Unmaintained/unsound/yanked notices are printed as warnings.
         run: cargo audit --db "$ADVISORY_DB" --no-fetch --file Cargo.lock
-
-  msrv:
-    name: Desktop minimum supported Rust
-    runs-on: macos-15
-    timeout-minutes: 35
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
-        with:
-          python-version: '3.12'
-      - name: Build desktop with the declared minimum Rust version
-        run: |
-          msrv=$(python -c 'import tomllib; print(tomllib.load(open("crates/ple-desktop/Cargo.toml", "rb"))["package"]["rust-version"])')
-          if [[ "$msrv" =~ ^[0-9]+\.[0-9]+$ ]]; then msrv="$msrv.0"; fi
-          rustup toolchain install "$msrv" --profile minimal
-          cargo "+$msrv" build --locked --bin kohdalab-ple
