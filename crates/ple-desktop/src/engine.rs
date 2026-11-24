@@ -401,13 +401,15 @@ impl Controller {
                         let result = execute(
                             &c,
                             &plan,
-                            spec.as_mut().unwrap(),
-                            &stage,
-                            &power,
-                            &stop,
-                            &rx,
-                            &events_tx,
-                            &mut recording,
+                            &mut RunContext {
+                                spec: spec.as_mut().unwrap(),
+                                stage: &stage,
+                                power: &power,
+                                stop: &stop,
+                                commands: &rx,
+                                events: &events_tx,
+                                recording: &mut recording,
+                            },
                         );
                         let state = match &result {
                             Ok(()) => RunState::Completed,
@@ -618,47 +620,55 @@ fn wait_settle(seconds: f64, stop: &AtomicBool) -> Result<(), RunError> {
     }
     check_stop(stop)
 }
-#[allow(clippy::too_many_arguments)]
-fn execute(
-    c: &Config,
-    plan: &ple_core::Plan,
-    spec: &mut Spectrometer,
-    stage: &StageClient,
-    power: &PowerClient,
-    stop: &AtomicBool,
-    commands: &mpsc::Receiver<Command>,
-    events: &mpsc::Sender<Event>,
-    recording: &mut Recording,
-) -> Result<(), RunError> {
-    spec.configure(c)?;
-    let _ = events.send(Event::SpectrometerSettings(spec.settings()));
-    recording.hardware(json!({"spectrometer":spec.settings(),"power":power.hardware()?,"mode":c.mode,"source":if c.mode == ple_core::Mode::Hardware {"connected_device_readback"} else {"simulated"}}))?;
-    let result = spec
+/// Stable handles shared by one run: devices, control-plane channels and the
+/// recording. Per-call values (point index, repeat, target and actual position,
+/// background) stay explicit arguments.
+struct RunContext<'a> {
+    spec: &'a mut Spectrometer,
+    stage: &'a StageClient,
+    power: &'a PowerClient,
+    stop: &'a AtomicBool,
+    commands: &'a mpsc::Receiver<Command>,
+    events: &'a mpsc::Sender<Event>,
+    recording: &'a mut Recording,
+}
+/// Configuration and plan governing one acquisition: the submitted settings for
+/// the reviewed first point, then the operator-accepted settings.
+#[derive(Clone, Copy)]
+struct RunSettings<'a> {
+    config: &'a Config,
+    plan: &'a ple_core::Plan,
+}
+fn execute(c: &Config, plan: &ple_core::Plan, ctx: &mut RunContext<'_>) -> Result<(), RunError> {
+    let RunContext { power, events, .. } = *ctx;
+    ctx.spec.configure(c)?;
+    let _ = events.send(Event::SpectrometerSettings(ctx.spec.settings()));
+    ctx.recording.hardware(json!({"spectrometer":ctx.spec.settings(),"power":power.hardware()?,"mode":c.mode,"source":if c.mode == ple_core::Mode::Hardware {"connected_device_readback"} else {"simulated"}}))?;
+    let result = ctx
+        .spec
         .prepare_shutter(c)
         .map_err(RunError::from)
         .and_then(|()| {
-            let snapshot = spec.shutter_snapshot();
+            let snapshot = ctx.spec.shutter_snapshot();
             let _ = events.send(Event::ShutterState(snapshot.clone()));
             ple_core::recording::atomic_json(
-                &recording.directory.join("metadata/shutter.json"),
+                &ctx.recording.directory.join("metadata/shutter.json"),
                 &snapshot,
             )?;
-            recording.event("shutter_connected", snapshot)?;
-            execute_inner(
-                c, plan, spec, stage, power, stop, commands, events, recording,
-            )
+            ctx.recording.event("shutter_connected", snapshot)?;
+            execute_inner(c, plan, ctx)
         });
-    if c.background.mode == BackgroundMode::Automatic && spec.shutter_attached() {
-        let closed = spec.set_shutter(true);
+    if c.background.mode == BackgroundMode::Automatic && ctx.spec.shutter_attached() {
+        let closed = ctx.spec.set_shutter(true);
         let closed_confirmed = closed.is_ok();
-        let closed = closed.and_then(|()| spec.finish_shutter());
-        let snapshot = spec.shutter_snapshot();
+        let closed = closed.and_then(|()| ctx.spec.finish_shutter());
+        let snapshot = ctx.spec.shutter_snapshot();
         let _ = events.send(Event::ShutterState(snapshot.clone()));
         let _ = events.send(Event::Cleanup {
             cause: CleanupCause::Shutter,
             result: closed.clone(),
         });
-        recording.event(
+        ctx.recording.event(
             "shutter_end_close",
             json!({"controller_state_confirmed":closed_confirmed,"cleanup_confirmed":closed.is_ok(),"physical_optical_sensor_confirmed":false,"state":snapshot,"error":closed.as_ref().err()}),
         )?;
@@ -672,18 +682,17 @@ fn execute(
     }
     result
 }
-#[allow(clippy::too_many_arguments)]
 fn execute_inner(
     c: &Config,
     plan: &ple_core::Plan,
-    spec: &mut Spectrometer,
-    stage: &StageClient,
-    power: &PowerClient,
-    stop: &AtomicBool,
-    commands: &mpsc::Receiver<Command>,
-    events: &mpsc::Sender<Event>,
-    recording: &mut Recording,
+    ctx: &mut RunContext<'_>,
 ) -> Result<(), RunError> {
+    let RunContext {
+        stop,
+        commands,
+        events,
+        ..
+    } = *ctx;
     if c.background.mode == BackgroundMode::Manual {
         let _ = events.send(Event::State(
             "Awaiting BG: block the excitation beam".into(),
@@ -693,15 +702,20 @@ fn execute_inner(
     } else {
         check_stop(stop)?;
         let _ = events.send(Event::State("Closing BG shutter".into()));
-        spec.set_shutter(true)?;
-        let snapshot = spec.shutter_snapshot();
+        ctx.spec.set_shutter(true)?;
+        let snapshot = ctx.spec.shutter_snapshot();
         let _ = events.send(Event::ShutterState(snapshot.clone()));
-        recording.event("shutter_closed", json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
+        ctx.recording.event("shutter_closed", json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
     }
     check_stop(stop)?;
     let _ = events.send(Event::State("Acquiring background".into()));
-    recording.event("background_started", json!({"mode":c.background.mode}))?;
-    let background = spec.acquire(&recording.base_path("background"), true, c.scan.start_mm)?;
+    ctx.recording
+        .event("background_started", json!({"mode":c.background.mode}))?;
+    let background = ctx.spec.acquire(
+        &ctx.recording.base_path("background"),
+        true,
+        c.scan.start_mm,
+    )?;
     check_stop(stop)?;
     if background
         .counts
@@ -711,7 +725,7 @@ fn execute_inner(
     {
         return Err("Run exceeds live-view memory budget; reduce points/repeats or ROI".into());
     }
-    recording.background(&background)?;
+    ctx.recording.background(&background)?;
     if let Err(field) = validate_background_settings(&background.settings) {
         return Err(format!(
             "Could not read LightField BG setting {field}; raw background retained"
@@ -728,29 +742,24 @@ fn execute_inner(
     } else {
         check_stop(stop)?;
         let _ = events.send(Event::State("Opening signal shutter".into()));
-        spec.set_shutter(false)?;
-        let snapshot = spec.shutter_snapshot();
+        ctx.spec.set_shutter(false)?;
+        let snapshot = ctx.spec.shutter_snapshot();
         let _ = events.send(Event::ShutterState(snapshot.clone()));
-        recording.event("shutter_opened",json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
+        ctx.recording.event("shutter_opened",json!({"controller_state_confirmed":true,"physical_optical_sensor_confirmed":false,"state":snapshot}))?;
     }
-    recording.event("signal_path_confirmed", json!({"mode":c.background.mode,"confirmation_source":if c.background.mode==BackgroundMode::Manual {"operator"} else {"controller_state"},"physical_optical_sensor_confirmed":false}))?;
+    ctx.recording.event("signal_path_confirmed", json!({"mode":c.background.mode,"confirmation_source":if c.background.mode==BackgroundMode::Manual {"operator"} else {"controller_state"},"physical_optical_sensor_confirmed":false}))?;
     // The first acquisition is retained, reviewed, then becomes point 0 / repeat 0.
-    let actual = move_point(c, 0, plan.positions_mm[0], stage, stop, events, recording)?;
+    let actual = move_point(c, 0, plan.positions_mm[0], ctx)?;
     let (first, acquisition_extrapolated) = acquire_point(
-        c,
-        plan,
+        RunSettings { config: c, plan },
         0,
         0,
         plan.positions_mm[0],
         actual,
-        spec,
-        power,
-        stop,
-        events,
-        recording,
+        ctx,
         &background,
     )?;
-    recording.preview(&first)?;
+    ctx.recording.preview(&first)?;
     let _ = events.send(Event::Preview(Arc::new(first.clone())));
     let _ = events.send(Event::State(
         "Review first PL: choose peak and integration interval".into(),
@@ -792,39 +801,38 @@ fn execute_inner(
         }
     };
     let accepted_plan = accepted.plan()?;
-    recording.analysis(&accepted, &accepted_plan)?;
+    ctx.recording.analysis(&accepted, &accepted_plan)?;
     let _ = events.send(Event::AnalysisAccepted(Box::new(accepted.clone())));
     if acquisition_extrapolated
         || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
             && outside_excitation_calibration(&accepted_plan, actual))
     {
-        recording.excitation_extrapolated(first.point_index, first.repeat_index, actual)?;
+        ctx.recording
+            .excitation_extrapolated(first.point_index, first.repeat_index, actual)?;
     }
-    recording.sample(&first_sample, &background)?;
+    ctx.recording.sample(&first_sample, &background)?;
     let _ = events.send(Event::Sample(Arc::new(first_sample)));
     check_stop(stop)?;
     for (index, &target) in plan.positions_mm.iter().enumerate() {
         let actual = if index == 0 {
             actual
         } else {
-            move_point(&accepted, index, target, stage, stop, events, recording)?
+            move_point(&accepted, index, target, ctx)?
         };
         for repeat in 0..accepted.scan.repeats {
             if index == 0 && repeat == 0 {
                 continue;
             }
             let (a, acquisition_extrapolated) = acquire_point(
-                &accepted,
-                &accepted_plan,
+                RunSettings {
+                    config: &accepted,
+                    plan: &accepted_plan,
+                },
                 index,
                 repeat,
                 target,
                 actual,
-                spec,
-                power,
-                stop,
-                events,
-                recording,
+                ctx,
                 &background,
             )?;
             let sample = a.analyze(&accepted, &accepted_plan, &accepted.initial_analysis())?;
@@ -832,9 +840,10 @@ fn execute_inner(
                 || (accepted.excitation_method == ple_core::ExcitationMethod::Calibration
                     && outside_excitation_calibration(&accepted_plan, actual))
             {
-                recording.excitation_extrapolated(index, repeat, actual)?;
+                ctx.recording
+                    .excitation_extrapolated(index, repeat, actual)?;
             }
-            recording.sample(&sample, &background)?;
+            ctx.recording.sample(&sample, &background)?;
             let _ = events.send(Event::Sample(Arc::new(sample)));
             check_stop(stop)?;
         }
@@ -845,11 +854,15 @@ fn move_point(
     c: &Config,
     index: usize,
     target: f64,
-    stage: &StageClient,
-    stop: &AtomicBool,
-    events: &mpsc::Sender<Event>,
-    recording: &mut Recording,
+    ctx: &mut RunContext<'_>,
 ) -> Result<f64, RunError> {
+    let RunContext {
+        stage,
+        stop,
+        events,
+        ..
+    } = *ctx;
+    let recording = &mut *ctx.recording;
     check_stop(stop)?;
     let _ = events.send(Event::State(format!("Moving CONEX to {target:.6} mm")));
     recording.event(
@@ -874,21 +887,24 @@ fn outside_excitation_calibration(plan: &ple_core::Plan, actual: f64) -> bool {
         if actual < lo.position_mm || actual > hi.position_mm)
 }
 
-#[allow(clippy::too_many_arguments)]
 fn acquire_point(
-    c: &Config,
-    plan: &ple_core::Plan,
+    settings: RunSettings<'_>,
     index: usize,
     repeat: u32,
     target: f64,
     actual: f64,
-    spec: &mut Spectrometer,
-    power: &PowerClient,
-    stop: &AtomicBool,
-    events: &mpsc::Sender<Event>,
-    recording: &mut Recording,
+    ctx: &mut RunContext<'_>,
     bg: &Spectrum,
 ) -> Result<(Acquisition, bool), RunError> {
+    let RunSettings { config: c, plan } = settings;
+    let RunContext {
+        power,
+        stop,
+        events,
+        ..
+    } = *ctx;
+    let spec = &mut *ctx.spec;
+    let recording = &mut *ctx.recording;
     check_stop(stop)?;
     let (power_w, power_time, sensor_wavelength, power_hardware, power_observation) =
         if c.power.wavelength_mode == ple_core::PowerWavelengthMode::PositionCalibration {
@@ -1296,13 +1312,15 @@ for line in sys.stdin:
         let error = execute(
             &config,
             &plan,
-            &mut spec,
-            &stage,
-            &power,
-            &stop,
-            &commands,
-            &tx,
-            &mut recording,
+            &mut RunContext {
+                spec: &mut spec,
+                stage: &stage,
+                power: &power,
+                stop: &stop,
+                commands: &commands,
+                events: &tx,
+                recording: &mut recording,
+            },
         )
         .unwrap_err();
         let error = error.to_string();
@@ -1405,13 +1423,15 @@ for line in sys.stdin:
             execute(
                 &config,
                 &plan,
-                &mut spec,
-                &stage,
-                &power,
-                &stop,
-                &commands,
-                &tx,
-                &mut recording,
+                &mut RunContext {
+                    spec: &mut spec,
+                    stage: &stage,
+                    power: &power,
+                    stop: &stop,
+                    commands: &commands,
+                    events: &tx,
+                    recording: &mut recording,
+                },
             )
             .unwrap();
             let log = std::fs::read_to_string(recording.directory.join("analysis.log")).unwrap();
