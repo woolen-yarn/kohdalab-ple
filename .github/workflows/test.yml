@@ -61,6 +61,51 @@ jobs:
           $result = $output | ConvertFrom-Json
           if (-not $result.config_valid) { throw 'Application did not return a valid configuration report.' }
 
+  advisories:
+    # Separate from the device-free test matrix so an unreachable advisory
+    # database can never block build/test results. Real findings still fail.
+    name: RustSec advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_AUDIT_VERSION: 0.22.0
+      CARGO_NET_RETRY: '5'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # TRKR pin
+        with:
+          persist-credentials: false
+      - name: Set up Rust checks
+        run: rustup toolchain install
+      - name: Install pinned cargo-audit
+        run: cargo install cargo-audit --version "$CARGO_AUDIT_VERSION" --locked
+      - name: Fetch RustSec advisory database
+        id: db
+        run: |
+          ADVISORY_DB="$RUNNER_TEMP/advisory-db"
+          echo "ADVISORY_DB=$ADVISORY_DB" >> "$GITHUB_ENV"
+          for attempt in 1 2 3; do
+            rm -rf "$ADVISORY_DB"
+            if git clone --depth 1 https://github.com/rustsec/advisory-db.git "$ADVISORY_DB"; then
+              echo "available=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep $((attempt * 15))
+          done
+          echo "available=false" >> "$GITHUB_OUTPUT"
+          echo "::warning title=Advisory check skipped::RustSec advisory database was unreachable; dependency advisories were NOT checked for this run."
+          echo "RustSec advisory database unreachable: advisory check skipped (not passed)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Prefetch locked crates index
+        if: steps.db.outputs.available == 'true'
+        # Warm the crates.io index for Cargo.lock so the offline audit's
+        # yanked-crate lookup does not emit index warnings. Does not affect
+        # which advisories are reported.
+        run: cargo fetch --locked
+      - name: Audit Cargo.lock against RustSec advisories
+        if: steps.db.outputs.available == 'true'
+        # No ignore list: any vulnerability advisory fails this job.
+        # Unmaintained/unsound/yanked notices are printed as warnings.
+        run: cargo audit --db "$ADVISORY_DB" --no-fetch --file Cargo.lock
+
   msrv:
     name: Desktop minimum supported Rust
     runs-on: macos-15
