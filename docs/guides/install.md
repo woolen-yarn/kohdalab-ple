@@ -4,9 +4,9 @@
 
 ## Application / アプリ
 
-Choose the current Preview from the [Downloads table](../../README.md#downloads--ダウンロード) and check its SHA-256. On Windows x64, run Setup.exe with administrator privileges, then open **KohdaLab → PLE → KohdaLab PLE** from the Start menu. For the portable ZIP, extract all files and launch `kohdalab-ple.exe`. The Apple-silicon app is for Demo and reviewing saved results. Packaged applications need no Rust. Demo needs no Python or instruments. Hardware acquisition requires Windows, 64-bit Python and the manufacturer software listed below.
+Choose the current release from the [Downloads table](../../README.md#downloads--ダウンロード) and check its SHA-256. On Windows x64, run Setup.exe with administrator privileges, then open **KohdaLab → PLE → KohdaLab PLE** from the Start menu. For the portable ZIP, extract all files and launch `kohdalab-ple.exe`. The Apple-silicon app is for Demo and reviewing saved results. Packaged applications need no Rust. Demo needs no Python or instruments. Hardware acquisition requires Windows, 64-bit Python and the manufacturer software listed below.
 
-[ダウンロード表](../../README.md#downloads--ダウンロード)から現行のPreviewを選び、SHA-256を照合します。Windows x64では管理者権限でSetup.exeを実行し、スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple silicon版はDemo・結果確認用です。配布版にRustは不要で、DemoはPython・機器不要です。実機取得にはWindows・64-bit Python・以下のメーカーソフトが必要です。
+[ダウンロード表](../../README.md#downloads--ダウンロード)から現行版を選び、SHA-256を照合します。Windows x64では管理者権限でSetup.exeを実行し、スタートメニューの **KohdaLab → PLE → KohdaLab PLE** から起動します。portable ZIPは全体を展開して `kohdalab-ple.exe` を起動します。macOS Apple silicon版はDemo・結果確認用です。配布版にRustは不要で、DemoはPython・機器不要です。実機取得にはWindows・64-bit Python・以下のメーカーソフトが必要です。
 
 ## Application locations
 
@@ -43,7 +43,7 @@ Links checked 2026-10-29. Use the official download page rather than copying DLL
 | --- | --- | --- | --- |
 | LightField | [LightField: Resources & Support → Software & Firmware](https://www.teledynevisionsolutions.com/products/lightfield/) | LightField installation including Add-in and Automation SDK; manufacturer account/license may be needed / Automation SDKを含むLightField。メーカーのログイン・利用資格が必要な場合あり | Acquisition PC / 取得PC |
 | CONEX CC | [Newport CONEX-CC: Resources → Software](https://www.newport.com/f/trb-actuator-conex-kits) | CONEX-CC installer and `Newport.CONEXCC.CommandInterface.dll`; see [official installation manual](https://www.newport.com/medias/sys_master/images/images/hc3/h1d/9044105035806/CONEX-CC-Controller-GUI-Manual.pdf) / インストーラー・Command Interface DLL | Controller PC only for remote operation / リモート運用ではCONEX制御PCのみ |
-| Thorlabs power meter | [Legacy power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [Optical Power Monitor](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) | Driver compatible with legacy `ThorlabsPowerMeter.py`, `TLPM_64.dll`, `.NET Interop`; newer TLPMX is a different API / 元PythonとTLPM系DLLに合う版。TLPMX系をそのまま差し替えない | Meter-connected PC / パワーメーター接続PC |
+| Thorlabs power meter | [Legacy power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [Optical Power Monitor](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) | Explicit native `TLPMX_64.dll` directory, or the legacy `ThorlabsPowerMeter.py` with its matching TLPM/.NET DLLs / TLPMX_64.dllの明示フォルダー、または対応する旧helperとTLPM/.NET DLL | Meter-connected PC / パワーメーター接続PC |
 | Automatic BG / 自動BG | [Bundled Shutter setup / 同梱Shutterの設定](../reference/shutter.md) | GUI API protocol 2対応の同梱GUI、STATE対応firmware。PLEはPicoへ直接接続しない | Acquisition PC / 取得PC |
 | Optional MFF shutter / 任意のMFF | [Thorlabs motion software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) | Appropriate USB/Kinesis prerequisites for the MFF/pylablib setup / 使用するMFFとpylablibの方式に合うUSB・Kinesis環境 | Shutter-connected PC / シャッター接続PC |
 
@@ -52,6 +52,10 @@ LightField SDK information: [manufacturer automation note](https://www.teledynev
 Manufacturer DLLs and the original Thorlabs helper are not redistributed here. Keep the reviewed helper in a local driver folder and set `power.driver_path`. The original input ZIP contained the two TLPM DLLs; that is not a full installer or a verified redistribution grant.
 
 メーカーDLLと元のThorlabs helperは本リポジトリでは再配布しません。確認済みhelperをローカルに置き、`power.driver_path`で指定します。元zipのTLPM DLL 2本はインストーラー一式や再配布許諾を意味しません。
+
+For the native TLPMX backend, set `power.driver_path` to the installed directory containing `TLPMX_64.dll` and `power.resource` to the verified VISA resource. It uses channel 1 with 64-bit Windows Python and leaves device reset disabled. A directory containing `ThorlabsPowerMeter.py` selects the existing helper path. Connection failures retain that selection.
+
+TLPMXでは、`power.driver_path`に導入済みの`TLPMX_64.dll`を含むフォルダー、`power.resource`に確認済みのVISAリソースを指定します。64-bit Windows Pythonでチャンネル1を使用し、接続時のデバイスリセットは無効です。`ThorlabsPowerMeter.py`があるフォルダーは従来のhelper経路を選択します。接続失敗時もこの選択を維持します。
 
 ## Laboratory apparatus / 使用装置
 

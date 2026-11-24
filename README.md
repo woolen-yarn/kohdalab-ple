@@ -25,13 +25,13 @@ Synthetic data; no instruments connected. The layout and live monitors follow Ko
 
 | Channel / 配布区分 | Packages / パッケージ | Qualification / 確認範囲 |
 | --- | --- | --- |
-| v0.3.14 preview / 実機確認用 | [Release v0.3.14](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v0.3.14): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
+| v1.0.1 / 正式版 | [Release v1.0.1](https://github.com/woolen-yarn/kohdalab-ple/releases/tag/v1.0.1): Windows x64 Setup.exe / portable ZIP, macOS Apple silicon app ZIP, source, checksums and validation evidence | [Validation record / 検証記録](docs/validation/README.md) |
 
-Public preview: the repository and downloads are publicly available; the release remains a GitHub pre-release. / リポジトリと配布物は一般公開しています。実機確認用のPreviewとして、GitHubのpre-release区分を維持します。
+Version 1.0.1 updates Python control. / 1.0.1でPython操作を更新しました。
 
 Rust is not required for packaged applications. Hardware acquisition needs Windows, 64-bit Python and manufacturer software; Demo uses no devices. Windows packages are unsigned. macOS uses ad hoc signing and is not notarized.
 
-配布版の起動にRustは不要です。実機取得にはWindows・64-bit Python・メーカーソフトが必要です。Demoは機器不要です。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。実機確認用であり、実機検証済みの安定版ではありません。
+配布版の起動にRustは不要です。実機取得にはWindows・64-bit Python・メーカーソフトが必要です。Demoは機器不要です。Windows版は未署名、macOS版はアドホック署名でApple公証は受けていません。実機確認の対象・範囲は[検証記録](docs/validation/README.md)を参照してください。
 
 ## Supported hardware and SDK downloads / 対応機器・SDK入手先
 
@@ -39,7 +39,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 | --- | --- | --- |
 | Spectrometer / 分光器 | LightField Automation SDK | [LightField software & firmware](https://www.teledynevisionsolutions.com/products/lightfield/) — sign-in may be required / ログインが必要な場合あり |
 | CONEX CC | Controller-PC server; 0–25 mm / 制御PCのサーバー経由 | [Newport CONEX-CC software](https://www.newport.com/f/trb-actuator-conex-kits) — Resources → Software |
-| Power meter / パワーメーター | Legacy TLPM .NET helper / 元zipのTLPM系ラッパー | [Thorlabs power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [OPM](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) |
+| Power meter / パワーメーター | Native TLPMX 64-bit SDK or legacy TLPM helper / native TLPMX 64-bit SDKまたは従来helper | [Thorlabs power-meter software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=PM100x) / [OPM](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=OPM) |
 | Automatic BG / 自動BG | [kohdalab-shutter](https://github.com/woolen-yarn/kohdalab-shutter) GUI API protocol 2 | [Setup / 設定](docs/reference/shutter.md) |
 | Optional BG shutter / 任意のBGシャッター | Thorlabs MFF via pylablib | [Thorlabs motion software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) |
 
@@ -49,7 +49,7 @@ Rust is not required for packaged applications. Hardware acquisition needs Windo
 
 Lab profile / 使用予定: **3900S · SpectraPro HRS-300 · PM100USB or PM100D**. CONEX defaults / 既定: **X=COM3, Y=COM4**. [Setup and active-axis details / 構成と走査軸](docs/reference/hardware.md#laboratory-setup--使用予定の構成).
 
-[Windows実機検証の入口 / Start here](START-HERE.md) · [v0.3.14 release notes / 更新内容](RELEASE-NOTES.md)
+[Windows実機検証の入口 / Start here](START-HERE.md) · [v1.0.1 release notes / 更新内容](RELEASE-NOTES.md)
 
 ## Quick start / はじめに
 

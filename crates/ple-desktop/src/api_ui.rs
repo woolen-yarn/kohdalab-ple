@@ -122,36 +122,95 @@ impl PleApp {
         }
         self.api = Some(runtime);
         if self.api_owned() || self.api_cleanup {
-            let mut stop = false;
-            let mut reclaim = false;
-            egui::Window::new("External control")
-                .id(egui::Id::new("external_control"))
-                .anchor(egui::Align2::CENTER_TOP, [0., 4.])
-                .collapsible(false)
-                .resizable(false)
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(
-                            visuals::TEAL,
-                            if self.api_cleanup {
-                                "Waiting for Stop / cleanup"
-                            } else {
-                                "PYTHON / EXTERNAL CONTROL"
-                            },
-                        );
-                        stop = ui.button("Stop").clicked();
-                        reclaim = ui.button("Take control").clicked();
-                    });
-                });
-            if (stop || reclaim)
-                && let Some(mut runtime) = self.api.take()
-            {
-                if reclaim {
-                    runtime.session.revoke();
-                }
-                self.api_stop(&mut runtime);
-                self.api = Some(runtime);
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
+    }
+    /// Plain-language description of what external control is actually doing.
+    pub(super) fn external_activity(&self) -> (egui::Color32, String) {
+        let (_, stop_error) = self.controller.stop_status();
+        if self.api_cleanup && (stop_error.is_some() || self.cleanup_error().is_some()) {
+            return (
+                visuals::RED,
+                "Stop / cleanup not confirmed; check the log".into(),
+            );
+        }
+        if self.api_cleanup {
+            return (visuals::ORANGE, "Stopping; waiting for cleanup".into());
+        }
+        match self.awaiting {
+            1 => {
+                return (
+                    visuals::ORANGE,
+                    "Waiting for background confirmation".into(),
+                );
             }
+            2 => return (visuals::ORANGE, "Waiting for signal confirmation".into()),
+            3 => return (visuals::ORANGE, "Waiting for analysis selection".into()),
+            _ => {}
+        }
+        let active = self.api.as_ref().and_then(|r| r.active.as_ref());
+        let text = match active.map(|a| a.kind.as_str()) {
+            Some("start") => format!("Measuring: {}", self.state),
+            Some("move") => format!("Moving stage to {:.3} mm", self.manual_target_mm),
+            Some("connect") => "Connecting devices".into(),
+            Some("disconnect") => "Disconnecting devices".into(),
+            Some("apply_spectrometer") => "Applying spectrometer settings".into(),
+            Some(other) => format!("Running {other}"),
+            None if self.operation_busy() => format!("Busy: {}", self.state),
+            None => "Idle; holding control".into(),
+        };
+        (visuals::TEAL, text)
+    }
+    /// Nonmodal strip across the top of the window while Python holds control
+    /// or Stop cleanup is outstanding. Stop comes first; Take control also stops.
+    pub(super) fn external_control_strip(&mut self, root: &mut egui::Ui) {
+        if !(self.api_owned() || self.api_cleanup) {
+            return;
+        }
+        let (color, activity) = self.external_activity();
+        let mut stop = false;
+        let mut reclaim = false;
+        egui::Panel::top("external_control")
+            .resizable(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(visuals::PANEL)
+                    .stroke(egui::Stroke::new(1.0_f32, visuals::BORDER))
+                    .inner_margin(egui::Margin::symmetric(12, 6)),
+            )
+            .show_inside(root, |ui| {
+                // Wrapped so Stop / Take control flow onto the next line in a
+                // narrow window instead of being clipped off the right edge.
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new("External control")
+                            .strong()
+                            .color(visuals::TEXT),
+                    );
+                    ui.label(egui::RichText::new("Python").color(visuals::MUTED));
+                    ui.separator();
+                    ui.label(egui::RichText::new(activity).color(color));
+                    stop = ui
+                        .button(egui::RichText::new("Stop").color(visuals::RED))
+                        .on_hover_text("Stop external work; Python keeps control")
+                        .clicked();
+                    reclaim = ui
+                        .button("Take control")
+                        .on_hover_text("Stop external work and revoke the Python lease")
+                        .clicked();
+                });
+            });
+        if (stop || reclaim)
+            && let Some(mut runtime) = self.api.take()
+        {
+            if reclaim {
+                runtime.session.revoke();
+                self.log("Operator took control from external client; Stop requested");
+            } else {
+                self.log("Operator Stop requested during external control");
+            }
+            self.api_stop(&mut runtime);
+            self.api = Some(runtime);
         }
     }
     fn api_stop(&mut self, runtime: &mut Runtime) {
@@ -288,6 +347,9 @@ impl PleApp {
             }
             "background" => return Ok(json!(self.background)),
             "stop" => {
+                if common && let Some(done) = Self::validate_stop_job(r, body)? {
+                    return Ok(done);
+                }
                 let job_id = r.active.as_ref().map(|a| a.id.clone());
                 self.api_stop(r);
                 return Ok(if common {
@@ -550,6 +612,48 @@ impl PleApp {
         } else {
             Ok(result)
         }
+    }
+    /// A common Stop that names a job must name the active job (or a retained
+    /// command receipt linked to it); otherwise nothing is stopped. A job that
+    /// already reached a terminal state (directly or via a linked command) is
+    /// an idempotent no-op answered with its receipt. A jobless Stop stays
+    /// available for optical cleanup and is never rejected here.
+    fn validate_stop_job(r: &Runtime, body: &Value) -> api::Result<Option<Value>> {
+        let Some(supplied) = body.get("job_id").filter(|v| !v.is_null()) else {
+            return Ok(None);
+        };
+        let id = supplied
+            .as_str()
+            .filter(|s| api::valid_id(s))
+            .ok_or_else(|| Error::new("validation", "job_id must be a UUID string"))?
+            .to_ascii_lowercase();
+        let active = r.active.as_ref().map(|a| a.id.as_str());
+        if active == Some(id.as_str()) {
+            return Ok(None);
+        }
+        let receipt = r.session.receipt(&id)?;
+        let job = receipt["run_job"].as_str().unwrap_or(&id);
+        if active == Some(job) {
+            return Ok(None);
+        }
+        // Only a job receipt (not a command acknowledgement) carries a status.
+        let job_receipt = if job == id {
+            Some(receipt.clone())
+        } else {
+            r.session.receipt(job).ok()
+        };
+        if let Some(done) = job_receipt
+            .filter(|j| j["id"] == job && j["status"].as_str().is_some_and(|s| s != "running"))
+        {
+            return Ok(Some(json!({
+                "requested":false,"job_id":job,"status":done["status"],"receipt":done,
+                "native":{"stop_requested":false,"confirmed":false}
+            })));
+        }
+        Err(Error::new(
+            "invalid_state",
+            "That job is not active; nothing was stopped. Omit job_id to stop all activity",
+        ))
     }
     fn api_idle(&self) -> api::Result<()> {
         if self.operation_busy() || self.controller.stop_status().0 {
@@ -940,6 +1044,263 @@ mod tests {
         .unwrap();
         assert_eq!(status["phase"], "cleanup_pending");
         assert_eq!(status["cleanup"], "pending");
+    }
+    fn common_stop(job_id: Option<Value>) -> Value {
+        let mut body = json!({"action":"stop","_control_method":"stop"});
+        if let Some(id) = job_id {
+            body["job_id"] = id.clone();
+            body["id"] = id.clone();
+            body["run_id"] = id;
+        }
+        body
+    }
+    #[test]
+    fn common_stop_validates_supplied_job_before_stopping() {
+        let (mut app, _ctx, _dir, _lease) = setup();
+        let first = crate::remote_gui::new_id().unwrap();
+        let active = crate::remote_gui::new_id().unwrap();
+        install_active(&mut app, &first, "move");
+        let mut r = app.api.take().unwrap();
+        app.api_complete(&mut r, "completed", None, None);
+        app.api = Some(r);
+        install_active(&mut app, &active, "move");
+
+        // A still-running job that is not the active one is unrelated.
+        let unrelated = crate::remote_gui::new_id().unwrap();
+        let r = app.api.as_mut().unwrap();
+        r.session
+            .reserve(unrelated.clone(), "move", json!({}))
+            .unwrap();
+        // A command acknowledgement without a linked job names nothing stoppable.
+        let unlinked = crate::remote_gui::new_id().unwrap();
+        r.session
+            .remember_command(
+                unlinked.clone(),
+                "confirm_background",
+                json!({}),
+                json!({"status":"completed"}),
+                None,
+            )
+            .unwrap();
+
+        // Unknown, malformed and unrelated IDs are rejected and nothing stops.
+        for (id, code) in [
+            (json!(crate::remote_gui::new_id().unwrap()), "unknown_job"),
+            (json!("not-a-uuid"), "validation"),
+            (json!(7), "validation"),
+            (json!(unrelated), "invalid_state"),
+            (json!(unlinked), "invalid_state"),
+        ] {
+            assert_eq!(
+                call(&mut app, common_stop(Some(id))).unwrap_err().code,
+                code
+            );
+            assert!(!app.api_cleanup, "rejected Stop must not stop");
+            assert!(!app.api.as_ref().unwrap().active.as_ref().unwrap().cancelled);
+        }
+
+        // An already-terminal job is a no-op answered with its receipt; the
+        // newer active job keeps running and no cleanup is requested.
+        let done = call(
+            &mut app,
+            common_stop(Some(json!(first.to_ascii_uppercase()))),
+        )
+        .unwrap();
+        assert_eq!(done["requested"], false);
+        assert_eq!(done["job_id"], first);
+        assert_eq!(done["status"], "completed");
+        assert_eq!(done["receipt"]["id"], first);
+        assert_eq!(done["receipt"]["status"], "completed");
+        assert!(!app.api_cleanup);
+        assert!(!app.api.as_ref().unwrap().active.as_ref().unwrap().cancelled);
+        assert_eq!(
+            app.api.as_ref().unwrap().active.as_ref().unwrap().id,
+            active
+        );
+
+        // The active job ID (any case) stops it.
+        let stopped = call(
+            &mut app,
+            common_stop(Some(json!(active.to_ascii_uppercase()))),
+        )
+        .unwrap();
+        assert_eq!(stopped["job_id"], active);
+        assert!(app.api_cleanup);
+        assert!(app.api.as_ref().unwrap().active.as_ref().unwrap().cancelled);
+    }
+    #[test]
+    fn common_stop_accepts_linked_command_and_jobless_stop_still_cleans_up() {
+        let (mut app, _ctx, _dir, lease) = setup();
+        // Jobless authenticated Stop with no active job still requests optical cleanup.
+        let jobless = call(&mut app, common_stop(None)).unwrap();
+        assert_eq!(jobless["requested"], true);
+        assert_eq!(jobless["job_id"], Value::Null);
+        assert!(app.api_cleanup);
+        app.api_cleanup = false;
+        assert_eq!(
+            call(&mut app, common_stop(Some(Value::Null))).unwrap()["requested"],
+            true
+        );
+        app.api_cleanup = false;
+        // Native Stop keeps its legacy shape and ignores identifiers.
+        assert_eq!(
+            call(&mut app, json!({"action":"stop","id":"anything"})).unwrap(),
+            json!({"stop_requested":true,"confirmed":false})
+        );
+        app.api_cleanup = false;
+
+        // A command receipt linked to the active run job may name it.
+        let run = crate::remote_gui::new_id().unwrap();
+        let command = crate::remote_gui::new_id().unwrap();
+        install_active(&mut app, &run, "start");
+        app.api
+            .as_mut()
+            .unwrap()
+            .session
+            .remember_command(
+                command.clone(),
+                "confirm_background",
+                json!({}),
+                json!({"accepted":true}),
+                Some(&run),
+            )
+            .unwrap();
+        let stopped = call(&mut app, common_stop(Some(json!(command)))).unwrap();
+        assert_eq!(stopped["job_id"], run);
+        assert!(app.api_cleanup);
+        let _ = lease;
+    }
+    #[test]
+    fn common_stop_for_command_linked_to_terminal_run_is_a_noop() {
+        let (mut app, _ctx, _dir, _lease) = setup();
+        let run = crate::remote_gui::new_id().unwrap();
+        let command = crate::remote_gui::new_id().unwrap();
+        install_active(&mut app, &run, "start");
+        app.api
+            .as_mut()
+            .unwrap()
+            .session
+            .remember_command(
+                command.clone(),
+                "confirm_background",
+                json!({}),
+                json!({"accepted":true}),
+                Some(&run),
+            )
+            .unwrap();
+        let mut r = app.api.take().unwrap();
+        app.api_complete(&mut r, "stopped", None, None);
+        app.api = Some(r);
+        let next = crate::remote_gui::new_id().unwrap();
+        install_active(&mut app, &next, "move");
+
+        let done = call(&mut app, common_stop(Some(json!(command)))).unwrap();
+        assert_eq!(done["requested"], false);
+        assert_eq!(done["job_id"], run);
+        assert_eq!(done["receipt"]["id"], run);
+        assert_eq!(done["receipt"]["status"], "stopped");
+        assert!(!app.api_cleanup, "no-op Stop must not request cleanup");
+        let a = app.api.as_ref().unwrap().active.as_ref().unwrap();
+        assert!(!a.cancelled && a.id == next, "new job must keep running");
+
+        // With no active job at all the terminal answer is the same.
+        app.api.as_mut().unwrap().active = None;
+        assert_eq!(
+            call(&mut app, common_stop(Some(json!(run)))).unwrap()["requested"],
+            false
+        );
+        assert!(!app.api_cleanup);
+    }
+    #[test]
+    fn external_strip_wraps_so_stop_and_take_control_stay_reachable() {
+        let (mut app, ctx, _dir, _lease) = setup();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(260., 400.));
+        let find = |app: &mut PleApp, events: Vec<egui::Event>| {
+            let out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                },
+                |ui| app.external_control_strip(ui),
+            );
+            let mut rects = std::collections::HashMap::new();
+            for c in &out.shapes {
+                if let egui::epaint::Shape::Text(t) = &c.shape {
+                    let r = t.visual_bounding_rect();
+                    rects.insert(t.galley.text().to_owned(), (r, c.clip_rect));
+                }
+            }
+            rects
+        };
+        // egui panels lay out inside the height remembered from the previous
+        // frame, so the very first frame of a wrapped strip still uses the
+        // default single-line height. Run frames until the layout repeats
+        // exactly, then judge the settled layout (what the operator sees).
+        let mut rects = find(&mut app, vec![]);
+        let mut stable = false;
+        for _ in 0..8 {
+            let next = find(&mut app, vec![]);
+            let same = ["External control", "Stop", "Take control"]
+                .iter()
+                .all(|l| next.get(*l) == rects.get(*l));
+            rects = next;
+            if same {
+                stable = true;
+                break;
+            }
+        }
+        assert!(stable, "external strip layout never settled");
+        for label in ["Stop", "Take control"] {
+            let (r, clip) = rects[label];
+            assert!(
+                screen.contains_rect(r) && clip.contains_rect(r),
+                "{label} clipped at {r:?}"
+            );
+        }
+        assert!(
+            rects["Stop"].0.top() > rects["External control"].0.bottom(),
+            "narrow strip should wrap the controls onto a new line"
+        );
+        // Clicking the wrapped Stop actually stops.
+        let at = rects["Stop"].0.center();
+        let press = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        find(&mut app, vec![egui::Event::PointerMoved(at)]);
+        find(&mut app, vec![press(true)]);
+        find(&mut app, vec![press(false)]);
+        assert!(app.api_cleanup);
+        assert!(app.api_owned(), "Stop keeps the Python lease");
+    }
+    fn install_active(app: &mut PleApp, id: &str, kind: &str) {
+        let r = app.api.as_mut().unwrap();
+        r.session.reserve(id.into(), kind, json!({})).unwrap();
+        r.active = Some(Active {
+            id: id.into(),
+            kind: kind.into(),
+            remaining: VecDeque::new(),
+            current: None,
+            cancelled: false,
+        });
+    }
+    #[test]
+    fn external_strip_reports_actual_activity() {
+        let (mut app, _ctx, _dir, _lease) = setup();
+        assert_eq!(app.external_activity().1, "Idle; holding control");
+        app.awaiting = 1;
+        assert_eq!(
+            app.external_activity().1,
+            "Waiting for background confirmation"
+        );
+        app.awaiting = 0;
+        app.api_cleanup = true;
+        assert_eq!(app.external_activity().1, "Stopping; waiting for cleanup");
+        app.cleanup_errors[crate::engine::CleanupCause::Shutter as usize] = Some("x".into());
+        assert_eq!(app.external_activity().0, visuals::RED);
     }
     #[test]
     fn common_describe_advertises_configuration_and_confirmation_actions() {

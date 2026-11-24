@@ -42,6 +42,15 @@ class WindowsInstallerTests(unittest.TestCase):
             self.assertNotIn('Delete "$DOCUMENTS', source)
             self.assertIn('MUI_LANGUAGE "Japanese"', source)
 
+    def test_native_power_adapter_is_required_in_installer_payload(self):
+        with tempfile.TemporaryDirectory() as temp:
+            payload = self.payload(Path(temp))
+            adapter = payload / "bridge/tlpmx.py"
+            self.assertTrue(adapter.is_file())
+            adapter.unlink()
+            with self.assertRaisesRegex(ValueError, "incomplete"):
+                installer.payload_files(payload)
+
     def test_rejects_version_and_windows_path_injection(self):
         for version in ('1.2.3"\n!system calc', "65536.0.0", "1.2", "01.2.3", "1.2.3.4"):
             with self.assertRaises(ValueError): installer.version_words(version)

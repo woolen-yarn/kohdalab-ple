@@ -13,8 +13,7 @@
 
 - [Repository layout / リポジトリ構成](development/repository-layout.md)
 - [Build and release / ビルド・配布](development/releasing.md)
-- [Architecture and TRKR/IV comparison at v0.2.0 / 0.2.0時点の設計監査](development/design-audit.md)
-- [Status and next steps, 2026-11 / 現状と次の作業の提案](development/status-and-next-steps-2026-11.md)
+- [Code-quality improvement tasks / コード品質改善タスク](development/improvement-tasks.md)
 - [Future CONEX CC server integration / サーバー受け入れ先](../servers/conex-cc/README.md)
 
 ## Reference / 仕様
@@ -29,9 +28,8 @@
 
 ## Validation / 検証
 
-- [Release validation / 配布版ごとの検証記録](validation/README.md#preview配布検証)（各Releaseの `VALIDATION.json`）
+- [Release validation / 配布版ごとの検証記録](validation/README.md)（各Releaseの `VALIDATION.json`）
 - [Hardware qualification record template / 実機確認記録の雛形](validation/hardware-qualification-template.md)
-- [Historical release evidence for v0.2.1 / 0.2.1時点の履歴](validation/release-readiness.json)
 - [GUI API evidence / GUI APIの証跡](validation/gui-api.json)
 
 ## Project policies / 方針

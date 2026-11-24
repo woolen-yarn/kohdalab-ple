@@ -821,6 +821,12 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_icon(
+                eframe::icon_data::from_png_bytes(include_bytes!(
+                    "../../../packaging/icons/kohdalab-ple.png"
+                ))
+                .expect("embedded KohdaLab PLE icon must be a valid PNG"),
+            )
             .with_inner_size([1566., 900.])
             .with_min_inner_size([1566., 700.]),
         ..Default::default()
