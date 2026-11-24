@@ -427,5 +427,145 @@
     "source": "https://raw.githubusercontent.com/spdx/license-list-data/617f1a78824394ada7525017d98c6fb215aad09b/text/MIT.txt",
     "sha256": "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
     "assignment": "Upstream Cargo.toml declares MIT; author Steven Sheldon. No license text shipped in crate or upstream tree 82d6c7a5b75dc0c71c3f46f87bb6c16a476f7748. Standard SPDX text provided; original manifest retained."
+  },
+  {
+    "package": "ecolor",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "eframe",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "egui",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "egui-wgpu",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "egui-winit",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "egui_glow",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "emath",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "epaint",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "epaint_default_fonts",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-MIT",
+    "sha256": "95ca92f5f8ea5231f1580b3a2a799e8260af3114b900e1def5355a7f44bcf60c"
+  },
+  {
+    "package": "ecolor",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "eframe",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "egui",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "egui-wgpu",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "egui-winit",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "egui_glow",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "emath",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "epaint",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "epaint_default_fonts",
+    "version": "0.35.0",
+    "file": "egui-0.35.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui/f72eaf6be1d137b2f568f7c21d4569ab6304b2b4/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
+  },
+  {
+    "package": "egui_plot",
+    "version": "0.36.0",
+    "file": "egui_plot-0.36.0/LICENSE-MIT",
+    "source": "https://raw.githubusercontent.com/emilk/egui_plot/7074b29dffb362ed430fa6439623509cf21e96ca/LICENSE-MIT",
+    "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+  },
+  {
+    "package": "egui_plot",
+    "version": "0.36.0",
+    "file": "egui_plot-0.36.0/LICENSE-APACHE",
+    "source": "https://raw.githubusercontent.com/emilk/egui_plot/7074b29dffb362ed430fa6439623509cf21e96ca/LICENSE-APACHE",
+    "sha256": "8173d5c29b4f956d532781d2b86e4e30f83e6b7878dce18c919451d6ba707c90"
   }
 ]

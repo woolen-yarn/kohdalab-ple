@@ -305,7 +305,7 @@ pub fn draw(
                 .include_x(0.)
                 .include_y(0.)
                 .y_axis_formatter(move |mark, _| scale.tick(mark.value, mark.step_size))
-                .label_formatter(|_, _| String::new())
+                .label_formatter(|_| Some(String::new()))
                 .show(ui, |plot| {
                     plot.line(
                         Line::new("trend", points)
@@ -390,7 +390,7 @@ mod tests {
                 ..Default::default()
             },
             |ctx| {
-                egui::CentralPanel::default().show_inside(ctx, |ui| {
+                egui::CentralPanel::default().show(ctx, |ui| {
                     let area = Rect::from_min_size(ui.max_rect().min, egui::vec2(167., 140.));
                     let used = draw(ui, area, &history, POWER_CHANNEL, false);
                     assert_eq!(used.min, area.min);
