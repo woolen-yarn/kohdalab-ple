@@ -13,6 +13,7 @@
 
 - [Repository layout / リポジトリ構成](development/repository-layout.md)
 - [Build and release / ビルド・配布](development/releasing.md)
+- [Code-quality improvement tasks / コード品質改善タスク](development/improvement-tasks.md)
 - [Future CONEX CC server integration / サーバー受け入れ先](../servers/conex-cc/README.md)
 
 ## Reference / 仕様
