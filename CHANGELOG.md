@@ -1,5 +1,11 @@
 # Changelog / 変更履歴
 
+## 1.0.2
+
+- Keep Windows installer payload path validation compatible with Python 3.15. / Python 3.15でもWindowsインストーラーの同梱ファイル名を検証できます。
+- Update GUI dependencies together on the Rust 1.92 baseline; patch the transitive `url` advisory. / Rust 1.92対応のGUI依存を同時に更新し、間接依存`url`の脆弱性を修正しました。
+- Add Linux build and test coverage and RustSec checks; refactor the device backend, layout state, run context and internal errors. / Linuxのビルド・テストとRustSec監査をCIに追加し、デバイス制御・画面状態・測定処理・内部エラーを整理しました。
+
 ## 1.0.1
 
 - `control.stop` validates a supplied `job_id` before stopping; jobless Stop, optical cleanup and linked command IDs are unchanged. / `control.stop`に指定した`job_id`を停止前に検証。ジョブ指定なしのStop・光学後処理・リンク済みコマンドIDは従来どおり。
