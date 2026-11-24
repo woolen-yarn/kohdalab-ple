@@ -56,6 +56,10 @@ def inspect_legacy_power(driver_path: str) -> list[dict[str, Any]]:
         return [check("legacy power helper", False, "power.driver_path must name the reviewed helper directory")]
     root = Path(driver_path)
     helper, dll_dir = root / "ThorlabsPowerMeter.py", root / "Thorlabs_DotNet_dll"
+    native = root / "TLPMX_64.dll"
+    if not helper.is_file() and native.is_file():
+        return [check("native TLPMX driver file", True,
+                      f"explicit 64-bit TLPMX directory: {root}; no instrument opened")]
     checks = [check("legacy power helper file", helper.is_file(), f"expected {helper}"),
               check("legacy power SDK directory", dll_dir.is_dir(), f"expected {dll_dir}")]
     for name in ("TLPM_64.dll", "Thorlabs.TLPM_64.Interop.dll"):
@@ -197,7 +201,13 @@ def report_for(config_path: Path, *, sdk_imports: bool, conex_sdk_dir: str | Non
         spectrometer = config.get("spectrometer", {})
         background = config.get("background", {})
         python = spectrometer.get("python", "") if isinstance(spectrometer, dict) else ""
-        for name, module in (("configured 64-bit Python", None), ("pythonnet import", "clr"), ("legacy helper pywin32 import", "win32api")):
+        power = config.get("power", {})
+        driver = Path(str(power.get("driver_path", ""))) if isinstance(power, dict) else Path()
+        native_power = not (driver / "ThorlabsPowerMeter.py").is_file() and (driver / "TLPMX_64.dll").is_file()
+        modules = [("configured 64-bit Python", None), ("pythonnet import", "clr")]
+        if not native_power:
+            modules.append(("legacy helper pywin32 import", "win32api"))
+        for name, module in modules:
             ok, detail = probe_python(python, module)
             checks.append(check(name, ok, detail))
         if isinstance(background, dict) and background.get("mode") == "automatic" and background.get("backend", "mff") == "mff":

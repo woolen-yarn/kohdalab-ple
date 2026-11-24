@@ -19,6 +19,13 @@ SPEC.loader.exec_module(release)
 
 
 class ReleasePackagingTests(unittest.TestCase):
+    def test_macos_bundle_includes_native_adapter_and_icon_resources(self):
+        script = (ROOT / "scripts/package-macos.sh").read_text()
+        self.assertIn("bridge/tlpmx.py", script)
+        self.assertIn("packaging/icons/kohdalab-ple.icns", script)
+        self.assertIn("CFBundleIconFile", script)
+        self.assertTrue((ROOT / "packaging/icons/kohdalab-ple.icns").is_file())
+
     def test_release_evidence_checks_archive_and_binary_hashes(self):
         spec = importlib.util.spec_from_file_location("release_metadata", ROOT / "scripts/release_metadata.py")
         metadata = importlib.util.module_from_spec(spec)

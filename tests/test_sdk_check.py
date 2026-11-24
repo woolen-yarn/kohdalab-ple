@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +15,29 @@ SPEC.loader.exec_module(sdk_check)
 
 
 class SdkCheckTests(unittest.TestCase):
+    def test_native_tlpmx_preflight_needs_no_legacy_helper_or_pywin32(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "TLPMX_64.dll").write_bytes(b"synthetic DLL fixture")
+            checks = sdk_check.inspect_legacy_power(str(root))
+            self.assertTrue(all(item["passed"] for item in checks))
+            self.assertEqual(checks[0]["name"], "native TLPMX driver file")
+            config = json.loads((ROOT / "examples/ple-settings.json").read_text())
+            config["mode"] = "hardware"
+            config["spectrometer"]["experiment"] = "test"
+            config["power"].update(driver_path=str(root), resource="USB::test")
+            profile = root / "profile.json"
+            profile.write_text(json.dumps(config))
+            with patch.object(sdk_check, "probe_python", return_value=(True, "mock")) as probe:
+                report = sdk_check.report_for(profile, sdk_imports=False, conex_sdk_dir=None)
+            self.assertNotIn("win32api", [call.args[1] for call in probe.call_args_list])
+            self.assertTrue(any(item["name"] == "native TLPMX driver file"
+                                for item in report["configuration_and_installation_checks"]))
+            (root / "ThorlabsPowerMeter.py").write_text("")
+            checks = sdk_check.inspect_legacy_power(str(root))
+            self.assertFalse(all(item["passed"] for item in checks))
+            self.assertFalse(any(item["name"] == "native TLPMX driver file" for item in checks))
+
     def test_python_probe_is_bounded_and_reports_process_failures(self) -> None:
         with patch.object(sdk_check.shutil, "which", return_value="python"):
             with patch.object(sdk_check.subprocess, "run", side_effect=subprocess.TimeoutExpired("python", 30)):

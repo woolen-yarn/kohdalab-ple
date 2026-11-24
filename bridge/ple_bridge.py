@@ -56,6 +56,21 @@ def _output_paths(path_base: Path) -> tuple[Path, Path, Path]:
             path_base.with_name(path_base.name + ".lightfield.csv"))
 
 
+def _lightfield_path(path: Path) -> str:
+    """Keep the same Windows file while using LightField's supported DOS/UNC syntax.
+
+    Rust canonicalize supplies verbatim paths; AutomationV5 rejects them as
+    invalid output directories. Python file checks retain the original path.
+    """
+    value = str(path)
+    if value.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + value[8:]
+    if (value.startswith("\\\\?\\") and len(value) >= 7
+            and value[4].isascii() and value[4].isalpha() and value[5:7] == ":\\"):
+        return value[4:]
+    return value
+
+
 def _wait_stable(
     paths: list[Path], deadline: float, cancel: threading.Event,
     exclusively_readable: Callable[[list[Path]], bool] | None = None,
@@ -105,9 +120,9 @@ def _read_one_roi_csv(path: Path) -> tuple[list[float], list[float]]:
     # R/F/Y/X are ROI, frame, row and pixel metadata in standard LightField
     # exports. They are never the calibrated spectral columns.
     x_key = next((original for normalized, original in fields.items()
-                  if normalized == "wavelength_nm" or normalized.startswith("wavelength")), None)
+                  if normalized in {"w", "wavelength_nm"} or normalized.startswith("wavelength")), None)
     y_key = next((original for normalized, original in fields.items()
-                  if normalized == "counts" or normalized.startswith("intensity")), None)
+                  if normalized in {"i", "counts"} or normalized.startswith("intensity")), None)
     if (x_key is None or y_key is None) and set(fields) == {"x", "y"}:
         x_key, y_key = fields["x"], fields["y"]
     if not x_key or not y_key:
@@ -386,7 +401,7 @@ class LightFieldSpectrometer:
         try:
             for path in paths:
                 handles.append(file_type.Open(
-                    str(path), self.api["FileMode"].Open, self.api["FileAccess"].Read,
+                    _lightfield_path(path), self.api["FileMode"].Open, self.api["FileAccess"].Read,
                     getattr(self.api["FileShare"], "None"),
                 ))
             return True
@@ -507,7 +522,7 @@ class LightFieldSpectrometer:
         if spe.exists() or native_csv.exists() or csv_path.exists():
             raise BridgeError("refusing to overwrite existing .spe, temporary LightField CSV, or .lightfield.csv output")
         a = self.api
-        self._set(a["ExperimentSettings"].FileNameGenerationDirectory, str(path_base.parent))
+        self._set(a["ExperimentSettings"].FileNameGenerationDirectory, _lightfield_path(path_base.parent))
         self._set(a["ExperimentSettings"].FileNameGenerationBaseFileName, path_base.name)
         self._set(a["ExperimentSettings"].FileNameGenerationAttachIncrement, False)
         self._set(a["ExperimentSettings"].FileNameGenerationAttachDate, False)
@@ -529,7 +544,7 @@ class LightFieldSpectrometer:
                 raise BridgeError("LightField acquisition did not complete before timeout")
             _wait_stable([spe], deadline, cancel, self._exclusively_readable)
             export = self.file_manager.CreateExportSettings(a["ExportFileType"].Csv)
-            export_task = self.file_manager.ExportAsync(export, str(spe))
+            export_task = self.file_manager.ExportAsync(export, _lightfield_path(spe))
             _wait_export_task(export_task, deadline, cancel)
             _wait_stable([spe, native_csv], deadline, cancel, self._exclusively_readable)
             os.replace(native_csv, csv_path)
@@ -676,7 +691,7 @@ class ThorlabsMffShutter:
 
 
 class LegacyThorlabsPowerMeter:
-    """Adapter for the laboratory's existing ThorlabsPowerMeter.py, supplied externally."""
+    """Power adapter for the existing helper or an explicitly selected native TLPMX SDK."""
     def __init__(self) -> None:
         self.meter = None
         self.resource: str | None = None
@@ -694,7 +709,7 @@ class LegacyThorlabsPowerMeter:
             "model": self._optional_text(getattr(meter, "modelName", None)),
             "serial_number": self._optional_text(getattr(meter, "serialNumber", None)),
             "manufacturer": self._optional_text(getattr(meter, "manufacturer", None)),
-            "driver_version": self._optional_text(getattr(type(meter), "driverVersion", None)),
+            "driver_version": self._optional_text(getattr(meter, "driverVersion", None)),
             "wavelength_range_nm": {"min": None, "max": None},
             "sensor": {"available": False}, "errors": [],
         }
@@ -792,7 +807,7 @@ class LegacyThorlabsPowerMeter:
         driver_path = args.get("driver_path")
         resource = args.get("resource")
         if not isinstance(driver_path, str) or not Path(driver_path).is_dir():
-            raise BridgeError("driver_path must be the folder containing ThorlabsPowerMeter.py and its official DLL")
+            raise BridgeError("driver_path must be a folder containing ThorlabsPowerMeter.py or TLPMX_64.dll")
         if not isinstance(resource, str) or not resource:
             raise BridgeError("resource must be a VISA resource name")
         wavelength = _finite("wavelength_nm", args.get("wavelength_nm"), True)
@@ -800,25 +815,27 @@ class LegacyThorlabsPowerMeter:
         average = _finite("average_s", args.get("average_s", 0.5), True)
         module_file = Path(driver_path) / "ThorlabsPowerMeter.py"
         dll_dir = Path(driver_path) / "Thorlabs_DotNet_dll"
-        if not module_file.is_file():
-            raise BridgeError(f"no ThorlabsPowerMeter.py at {module_file}")
-        if not dll_dir.is_dir():
-            raise BridgeError(f"no Thorlabs_DotNet_dll folder at {dll_dir}")
-        spec = importlib.util.spec_from_file_location("kohdalab_thorlabs_power", module_file)
-        if spec is None or spec.loader is None:
-            raise BridgeError("could not load ThorlabsPowerMeter.py")
-        module = importlib.util.module_from_spec(spec)
+        native_dll = Path(driver_path) / "TLPMX_64.dll"
+        if not module_file.is_file() and not native_dll.is_file():
+            raise BridgeError(f"no ThorlabsPowerMeter.py or TLPMX_64.dll at {driver_path}")
         meter = None
         try:
             with redirect_stdout(sys.stderr):
-                spec.loader.exec_module(module)
-                # The legacy helper's listDevices() incorrectly uses extend on
-                # a string.  Add the DLL directory correctly first, then pass
-                # it for its version lookup and AddReference resolution.
-                if str(dll_dir) not in sys.path:
-                    sys.path.append(str(dll_dir))
-                devices = module.ThorlabsPowerMeter.listDevices(str(dll_dir))
-                meter = devices.connect(resource)
+                if module_file.is_file():
+                    if not dll_dir.is_dir():
+                        raise BridgeError(f"no Thorlabs_DotNet_dll folder at {dll_dir}")
+                    spec = importlib.util.spec_from_file_location("kohdalab_thorlabs_power", module_file)
+                    if spec is None or spec.loader is None:
+                        raise BridgeError("could not load ThorlabsPowerMeter.py")
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    if str(dll_dir) not in sys.path:
+                        sys.path.append(str(dll_dir))
+                    devices = module.ThorlabsPowerMeter.listDevices(str(dll_dir))
+                    meter = devices.connect(resource)
+                else:
+                    from tlpmx import TLPMXMeter
+                    meter = TLPMXMeter(native_dll, resource)
                 if meter is None:
                     raise BridgeError(f"could not connect power meter {resource}")
                 actual_wavelength = self._set_meter_wavelength(meter, wavelength, tolerance)
@@ -901,12 +918,11 @@ class LegacyThorlabsPowerMeter:
 
     def disconnect(self) -> None:
         if self.meter is not None:
-            try:
-                with redirect_stdout(sys.stderr):
-                    self.meter.disconnect()
-            finally:
-                self.meter, self.resource, self.wavelength_nm = None, None, None
-                self.hardware = {"available": False, "errors": ["power meter is not connected"]}
+            with redirect_stdout(sys.stderr):
+                self.meter.disconnect()
+            # Keep ownership and identity when close fails so cleanup can retry.
+            self.meter, self.resource, self.wavelength_nm = None, None, None
+            self.hardware = {"available": False, "errors": ["power meter is not connected"]}
 
     def state(self) -> dict[str, Any]:
         return {"connected": self.meter is not None, "resource": self.resource,

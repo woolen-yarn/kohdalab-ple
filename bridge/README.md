@@ -115,3 +115,34 @@ signature and aborts the active waiter. The adapter intentionally does not retry
 home, or recover a controller. Confirm the installed Newport
 `CommandInterfaceConexCC` version exposes the documented `SL_Get`, `SR_Get`,
 `TP`, `TS`, `PA_Set`, and `ST` signatures before production use.
+
+### Serial-port lock shared with TRKR
+
+Before loading the Newport SDK, `connect` takes the same cross-process lock
+that KohdaLab TRKR takes when it opens a serial port. The lock file is
+`kohdalab-motion-<key>.lock` in the directory Rust `std::env::temp_dir()`
+reports (`GetTempPath2W`, or `GetTempPathW` on older Windows). `<key>` is the
+lowercase hex of the UTF-8 port name after trimming, ASCII-uppercasing and
+removing `\\.\`, so `COM4`, `com4` and `\\.\COM4` share one lock. The lock is an
+exclusive, non-blocking `LockFileEx` over the whole file (`flock` off Windows),
+the same call TRKR makes through fs2. If the lock is already held, `connect`
+fails with `Serial port … is already used by another measurement process` and
+the SDK is never loaded or opened.
+
+The lock is held while connected. It is released only after
+`CloseInstrument` succeeds, or when the bridge process exits. If
+`OpenInstrument` raises, or `CloseInstrument` raises or returns nonzero, the
+port's state is unknown, so the bridge keeps the lock. Later `connect` calls
+then fail until the bridge exits. The protocol has no disconnect
+operation, so stop the bridge before another program takes the port. The lock
+file is never deleted. Do not delete it by hand to work around a conflict.
+
+The lock only coordinates KohdaLab processes on the same Windows host that
+resolve the same temporary directory. In practice that means the same user
+account with the same `TMP`/`TEMP` (a SYSTEM service uses
+`C:\Windows\SystemTemp`). It does not cover other users, other PCs, remote PLE
+clients (which never open the port themselves) or vendor software such as the
+Newport utility; Windows' own exclusive COM-port open still applies to those.
+Stop and readback behavior is unchanged.
+
+TRKRと同じシリアルポート排他ロックを、Newport SDKを読み込む前に取得します。ロックファイルはRust `std::env::temp_dir()`と同じ一時フォルダーの`kohdalab-motion-<key>.lock`です。`<key>`はポート名を前後空白除去・ASCII大文字化し`\\.\`を除いたUTF-8の16進表記です。ロックはファイル全体に対する排他・非待機の`LockFileEx`（Windows以外は`flock`）で、TRKRのfs2と同じ呼び出しです。使用中なら`connect`はSDKを開かずに失敗します。ロックは`CloseInstrument`の成功時またはプロセス終了時にだけ解放します。開閉の結果が不明な場合は保持したままにします。ロックファイルは削除しません。排他が効くのは同じWindows PC・同じ一時フォルダー（同一ユーザー・同じ`TMP`/`TEMP`）のKohdaLabプロセス同士だけです。別ユーザー、別PC、リモートのPLEクライアント、Newport純正ソフトは対象外です。Stopと読戻しの動作は変わりません。
