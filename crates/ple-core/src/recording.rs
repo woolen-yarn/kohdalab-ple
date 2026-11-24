@@ -1,5 +1,5 @@
 //! Immutable run inputs, raw/processed CSV and crash-readable run status.
-use crate::{Config, HC_EV_NM, Plan, Sample, Spectrum};
+use crate::{Config, Error, HC_EV_NM, Plan, Sample, Spectrum};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -14,12 +14,12 @@ pub fn unix_s() -> f64 {
         .unwrap_or_default()
         .as_secs_f64()
 }
-fn sha256(path: &Path) -> Result<String, String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+fn sha256(path: &Path) -> Result<String, Error> {
+    let mut file = File::open(path)?;
     let mut hash = Sha256::new();
     let mut buffer = [0_u8; 65_536];
     loop {
-        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
@@ -252,7 +252,7 @@ impl Recording {
             .map_err(|e| e.to_string())?;
         self.raw.flush().map_err(|e| e.to_string())
     }
-    fn log(&mut self, level: &str, event: &str, context: Value) -> Result<(), String> {
+    fn log(&mut self, level: &str, event: &str, context: Value) -> Result<(), Error> {
         writeln!(
             self.log,
             "{}\t{}\t{}\t{}\t{}",
@@ -260,10 +260,10 @@ impl Recording {
             level,
             self.run_id,
             event,
-            serde_json::to_string(&context).map_err(|e| e.to_string())?
-        )
-        .map_err(|e| e.to_string())?;
-        self.log.flush().map_err(|e| e.to_string())
+            serde_json::to_string(&context)?
+        )?;
+        self.log.flush()?;
+        Ok(())
     }
     pub fn excitation_extrapolated(
         &mut self,
@@ -276,6 +276,7 @@ impl Recording {
             "excitation_extrapolated",
             json!({"point_index":point_index,"repeat_index":repeat_index,"actual_mm":actual_mm}),
         )
+        .map_err(String::from)
     }
     pub fn hardware(&mut self, hardware: Value) -> Result<(), String> {
         atomic_json(
@@ -597,27 +598,25 @@ fn bundle_manifest(
         "run_bundle":{"schema":"kohdalab_run_bundle_v1","filenames":{"analysis_csv":"analysis.csv","raw_csv":"analysis.raw.csv","log":"analysis.log","conditions_json":"analysis.run.json"}},
         "file_hashes":null,"hash_verification":{"status":"pending","algorithm":"sha256"}})
 }
-fn write_raw_csv(path: &Path, s: &Spectrum) -> Result<(), String> {
+fn write_raw_csv(path: &Path, s: &Spectrum) -> Result<(), Error> {
     if path.exists() {
-        return Err(format!("Refusing to replace raw CSV {}", path.display()));
+        return Err(Error::RawCsvExists(path.to_path_buf()));
     }
     let temp = path.with_extension("csv.tmp");
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&temp)
-        .map_err(|e| e.to_string())?;
+        .open(&temp)?;
     let mut w = csv::Writer::from_writer(file);
-    w.write_record(["wavelength_nm", "counts"])
-        .map_err(|e| e.to_string())?;
+    w.write_record(["wavelength_nm", "counts"])?;
     for (x, y) in s.wavelength_nm.iter().zip(&s.counts) {
-        w.write_record([x.to_string(), y.to_string()])
-            .map_err(|e| e.to_string())?;
+        w.write_record([x.to_string(), y.to_string()])?;
     }
-    w.flush().map_err(|e| e.to_string())?;
-    w.get_ref().sync_all().map_err(|e| e.to_string())?;
+    w.flush()?;
+    w.get_ref().sync_all()?;
     drop(w);
-    fs::rename(temp, path).map_err(|e| e.to_string())
+    fs::rename(temp, path)?;
+    Ok(())
 }
 fn is_sample_metadata(name: &str) -> bool {
     (name.starts_with("point_") || name.starts_with("Y_"))

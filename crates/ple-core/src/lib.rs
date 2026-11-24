@@ -1,7 +1,9 @@
 //! Hardware-independent PLE planning, reduction and run recording.
 #![forbid(unsafe_code)]
 pub mod display;
+mod error;
 pub mod recording;
+use error::Error;
 use serde::{Deserialize, Serialize};
 
 pub const HC_EV_NM: f64 = 1239.8419843320026;
@@ -336,11 +338,11 @@ pub struct Plan {
     pub acquisition_count: usize,
     pub excitation_anchors: Vec<PeakAnchor>,
 }
-fn finite(v: f64, name: &str) -> Result<(), String> {
+fn finite(v: f64, name: &str) -> Result<(), Error> {
     if v.is_finite() {
         Ok(())
     } else {
-        Err(format!("{name} must be finite"))
+        Err(Error::NonFinite(name.into()))
     }
 }
 impl Config {
