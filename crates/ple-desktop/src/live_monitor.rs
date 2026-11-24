@@ -305,7 +305,7 @@ pub fn draw(
                 .include_x(0.)
                 .include_y(0.)
                 .y_axis_formatter(move |mark, _| scale.tick(mark.value, mark.step_size))
-                .label_formatter(|_| Some(String::new()))
+                .label_formatter(|_| None)
                 .show(ui, |plot| {
                     plot.line(
                         Line::new("trend", points)

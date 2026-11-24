@@ -767,7 +767,7 @@ impl PleApp {
         .allow_boxed_zoom(true)
         .allow_scroll(false)
         .allow_drag(true)
-        .label_formatter(|_| Some(String::new()));
+        .label_formatter(|_| None);
         let plot = if has_data {
             plot.auto_bounds(true)
         } else {
