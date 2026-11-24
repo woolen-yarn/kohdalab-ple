@@ -355,7 +355,7 @@ impl PleApp {
         }
     }
     fn device_height(&self, index: usize) -> f32 {
-        match (index, self.device_expanded[index]) {
+        match (index, self.layout.device_expanded[index]) {
             (0, false) => 158.,
             (0, true) => 396.,
             (_, false) => 234.,
@@ -369,7 +369,7 @@ impl PleApp {
         let connected = self.connected[index];
         let owned = index == 0 && self.controller.has_spectrometer_owner();
         let w = area.width();
-        let expanded = self.device_expanded[index];
+        let expanded = self.layout.device_expanded[index];
         let mut connect = false;
         let mut disconnect = false;
         let mut settings = false;
@@ -387,7 +387,7 @@ impl PleApp {
             f.toggle(
                 &format!("device_{index}_toggle"),
                 rect(11., 27., 71., 24.),
-                &mut self.device_expanded[index],
+                &mut self.layout.device_expanded[index],
                 "Device",
             );
             let caption = if self.pending_connections[index] {
@@ -1300,26 +1300,35 @@ impl PleApp {
         );
     }
     fn toggle_right(&mut self, ctx: &egui::Context, viewport: Rect) {
-        if !self.right_collapsed {
-            self.right_was_maximized = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-            if self.right_was_maximized {
+        if !self.layout.right_collapsed {
+            self.layout.right_was_maximized =
+                ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+            if self.layout.right_was_maximized {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(false));
             }
         }
         let extra = precision::Columns::RIGHT_WIDTH - 27.;
-        let width = viewport.width() + if self.right_collapsed { extra } else { -extra };
-        self.right_collapsed = !self.right_collapsed;
+        let width = viewport.width()
+            + if self.layout.right_collapsed {
+                extra
+            } else {
+                -extra
+            };
+        self.layout.right_collapsed = !self.layout.right_collapsed;
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(
-            precision::Columns::minimum_width(self.right_collapsed, self.left_collapsed),
+            precision::Columns::minimum_width(
+                self.layout.right_collapsed,
+                self.layout.left_collapsed,
+            ),
             700.,
         )));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(Vec2::new(
             width,
             viewport.height(),
         )));
-        if !self.right_collapsed && self.right_was_maximized {
+        if !self.layout.right_collapsed && self.layout.right_was_maximized {
             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(true));
-            self.right_was_maximized = false;
+            self.layout.right_was_maximized = false;
         }
     }
     pub(super) fn draw(&mut self, root: &mut egui::Ui) {
@@ -1330,13 +1339,15 @@ impl PleApp {
             .frame(egui::Frame::new().fill(BG))
             .show_inside(root, |ui| {
                 let viewport = ui.max_rect();
-                if !self.rails_initialized {
-                    (self.left_collapsed, self.right_collapsed) =
+                if !self.layout.rails_initialized {
+                    (self.layout.left_collapsed, self.layout.right_collapsed) =
                         precision::Columns::initial_rails(viewport.width());
-                    self.rails_initialized = true;
+                    self.layout.rails_initialized = true;
                 }
-                let minimum =
-                    precision::Columns::minimum_width(self.right_collapsed, self.left_collapsed);
+                let minimum = precision::Columns::minimum_width(
+                    self.layout.right_collapsed,
+                    self.layout.left_collapsed,
+                );
                 ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(Vec2::new(
                     minimum, 700.,
                 )));
@@ -1346,10 +1357,13 @@ impl PleApp {
                         viewport.height(),
                     )));
                 }
-                let columns =
-                    precision::Columns::new(viewport, self.right_collapsed, self.left_collapsed);
+                let columns = precision::Columns::new(
+                    viewport,
+                    self.layout.right_collapsed,
+                    self.layout.left_collapsed,
+                );
                 columns.record(&mut self.geometry);
-                if !self.left_collapsed {
+                if !self.layout.left_collapsed {
                     let content = Rect::from_min_max(
                         columns.left.min + Vec2::splat(2.),
                         egui::pos2(columns.left_toggle.left() - 4., columns.left.bottom() - 2.),
@@ -1396,32 +1410,36 @@ impl PleApp {
                 if ui
                     .put(
                         columns.left_toggle,
-                        egui::Button::new(if self.left_collapsed { ">" } else { "<" })
+                        egui::Button::new(if self.layout.left_collapsed { ">" } else { "<" })
                             .min_size(columns.left_toggle.size())
                             .corner_radius(4),
                     )
-                    .on_hover_text(if self.left_collapsed {
+                    .on_hover_text(if self.layout.left_collapsed {
                         "Show devices"
                     } else {
                         "Hide devices"
                     })
                     .clicked()
                 {
-                    self.left_collapsed = !self.left_collapsed;
+                    self.layout.left_collapsed = !self.layout.left_collapsed;
                 }
                 if ui
                     .put(
                         columns.toggle,
-                        egui::Button::new(if self.right_collapsed { "<" } else { ">" })
-                            .min_size(columns.toggle.size())
-                            .corner_radius(4),
+                        egui::Button::new(if self.layout.right_collapsed {
+                            "<"
+                        } else {
+                            ">"
+                        })
+                        .min_size(columns.toggle.size())
+                        .corner_radius(4),
                     )
                     .on_hover_text("Show / hide log and values")
                     .clicked()
                 {
                     self.toggle_right(ctx, viewport);
                 }
-                if !self.right_collapsed {
+                if !self.layout.right_collapsed {
                     self.details(ui, columns);
                 }
                 self.measurement(ui, columns.measurement);
@@ -1885,7 +1903,7 @@ mod tests {
         app.connected = [true; 3];
         app.cleanup_errors[crate::engine::CleanupCause::Shutter as usize] =
             Some("Closed state unconfirmed".into());
-        app.device_expanded[1] = true;
+        app.layout.device_expanded[1] = true;
         frame(&mut app, &ctx, vec![]);
         click(&mut app, &ctx, "run_start");
         assert!(!app.busy);
@@ -1906,7 +1924,7 @@ mod tests {
         assert!(!app.geometry.contains_key("stage_host"));
         click(&mut app, &ctx, "device_1_toggle");
         frame(&mut app, &ctx, vec![]);
-        assert!(app.device_expanded[1]);
+        assert!(app.layout.device_expanded[1]);
         assert!(app.geometry.contains_key("stage_host"));
         assert_eq!(app.geometry["plot_current"], plots);
         assert!(!app.connected.iter().any(|v| *v));
@@ -1960,7 +1978,7 @@ mod tests {
     fn expanded_spectrometer_settings_fit_inside_device_card() {
         let ctx = egui::Context::default();
         let mut app = PleApp::with_context(&ctx, Launch::default());
-        app.device_expanded[0] = true;
+        app.layout.device_expanded[0] = true;
         frame(&mut app, &ctx, vec![]);
         let g = app.geometry["device_0_group"];
         let card = rect(g[0], g[1], g[2], g[3]);
@@ -1981,7 +1999,7 @@ mod tests {
     fn manual_target_controls_fit_and_move_is_locked_during_scan() {
         let ctx = egui::Context::default();
         let mut app = PleApp::with_context(&ctx, Launch::default());
-        app.device_expanded[1] = true;
+        app.layout.device_expanded[1] = true;
         app.connected[1] = true;
         app.busy = true;
         frame(&mut app, &ctx, vec![]);

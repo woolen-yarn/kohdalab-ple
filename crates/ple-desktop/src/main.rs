@@ -51,6 +51,16 @@ struct HeatmapCache {
     signal_magnitude: f64,
     raster: Option<presentation::HeatmapRaster>,
 }
+/// GUI-layout-only flags. Never persisted and never part of the saved profile.
+#[derive(Default)]
+struct UiLayout {
+    left_collapsed: bool,
+    rails_initialized: bool,
+    right_collapsed: bool,
+    right_was_maximized: bool,
+    device_expanded: [bool; 3],
+    screenshot_requested: bool,
+}
 struct PleApp {
     controller: Controller,
     api: Option<api_ui::Runtime>,
@@ -97,15 +107,10 @@ struct PleApp {
     review_demo: bool,
     auto_started: bool,
     screenshot: Option<PathBuf>,
-    screenshot_requested: bool,
     closing: bool,
     heatmap_cache: Option<HeatmapCache>,
     geometry: precision::Geometry,
-    left_collapsed: bool,
-    rails_initialized: bool,
-    right_collapsed: bool,
-    right_was_maximized: bool,
-    device_expanded: [bool; 3],
+    layout: UiLayout,
     pending_connections: [bool; 3],
     advanced: Option<ui::Advanced>,
     dialog: Option<ui::PendingDialog>,
@@ -196,15 +201,10 @@ impl PleApp {
             review_demo: launch.review_demo,
             auto_started: false,
             screenshot: launch.screenshot,
-            screenshot_requested: false,
             closing: false,
             heatmap_cache: None,
             geometry: Default::default(),
-            left_collapsed: false,
-            rails_initialized: false,
-            right_collapsed: false,
-            right_was_maximized: false,
-            device_expanded: [false; 3],
+            layout: UiLayout::default(),
             pending_connections: [false; 3],
             advanced: None,
             dialog: None,
@@ -664,9 +664,9 @@ impl eframe::App for PleApp {
             && self.auto_started
             && ((!self.busy && !self.samples.is_empty())
                 || (self.review_demo && self.awaiting == 3))
-            && !self.screenshot_requested
+            && !self.layout.screenshot_requested
         {
-            self.screenshot_requested = true;
+            self.layout.screenshot_requested = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
         }
         let capture = ctx.input(|i| {
